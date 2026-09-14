@@ -1,0 +1,27 @@
+{
+  "name": "@vork/database",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "db:migrate": "drizzle-kit migrate",
+    "test": "vitest run",
+    "test:integration": "vitest run src/repositories.integration.test.ts",
+    "typecheck": "tsc --noEmit",
+    "lint": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@vork/contracts": "workspace:*",
+    "drizzle-orm": "^0.44.5",
+    "nanoid": "^5.1.6",
+    "postgres": "^3.4.7"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.3",
+    "@vork/test-support": "workspace:*",
+    "drizzle-kit": "^0.30.4"
+  }
+}
