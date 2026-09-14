@@ -1,0 +1,14 @@
+{
+  "name": "@vork/contracts",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "lint": "tsc --noEmit"
+  },
+  "dependencies": {
+    "zod": "^3.24.2"
+  }
+}
