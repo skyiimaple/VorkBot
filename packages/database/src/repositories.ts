@@ -89,6 +89,8 @@ export type CompleteTaskWithMessageRepositoryInput = {
 
 export type Repositories = ReturnType<typeof createRepositories>;
 
+const terminalTaskStatuses: Task["status"][] = ["completed", "failed", "cancelled"];
+
 function id(prefix: string): string {
   return `${prefix}_${nanoid()}`;
 }
@@ -267,11 +269,18 @@ export function createRepositories(options: DatabaseClientOptions = {}) {
           FROM tasks WHERE id = ${input.taskId} FOR UPDATE
         `;
         const task = required(taskRows, "Task does not exist");
+        if (terminalTaskStatuses.includes(task.status)) {
+          throw new Error("Terminal tasks cannot accept additional events");
+        }
+        if (input.type === "task.running" && task.status !== "queued") {
+          throw new Error("Only queued tasks can transition to running");
+        }
         const sequence = task.last_event_sequence + 1;
+        const status = input.type === "task.running" ? "running" : task.status;
         const now = new Date().toISOString();
         await transaction`
           UPDATE tasks
-          SET last_event_sequence = ${sequence}, updated_at = ${now}
+          SET status = ${status}, last_event_sequence = ${sequence}, updated_at = ${now}
           WHERE id = ${task.id}
         `;
         const eventRows = await transaction<TaskEventRow[]>`
@@ -300,6 +309,12 @@ export function createRepositories(options: DatabaseClientOptions = {}) {
           FROM tasks WHERE id = ${taskId} FOR UPDATE
         `;
         const task = required(taskRows, "Task does not exist");
+        if (task.status === "failed") {
+          return toTask(task);
+        }
+        if (terminalTaskStatuses.includes(task.status)) {
+          throw new Error("Terminal tasks cannot be failed again");
+        }
         const sequence = task.last_event_sequence + 1;
         const now = new Date().toISOString();
         const updatedRows = await transaction<TaskRow[]>`
@@ -323,7 +338,7 @@ export function createRepositories(options: DatabaseClientOptions = {}) {
           FROM tasks WHERE id = ${input.taskId} FOR UPDATE
         `;
         const task = required(taskRows, "Task does not exist");
-        if (["completed", "failed", "cancelled"].includes(task.status)) {
+        if (terminalTaskStatuses.includes(task.status)) {
           throw new Error("Terminal tasks cannot be completed again");
         }
 

@@ -73,7 +73,8 @@ export const tasks = pgTable(
     updatedAt: timestampWithTimeZone("updated_at").notNull()
   },
   (table) => [
-    check("tasks_status_check", sql`${table.status} IN ('queued', 'running', 'completed', 'failed', 'cancelled')`)
+    check("tasks_status_check", sql`${table.status} IN ('queued', 'running', 'completed', 'failed', 'cancelled')`),
+    check("tasks_last_event_sequence_check", sql`${table.lastEventSequence} >= 0`)
   ]
 );
 
@@ -88,5 +89,8 @@ export const taskEvents = pgTable(
     payload: jsonb("payload").notNull(),
     createdAt: timestampWithTimeZone("created_at").notNull()
   },
-  (table) => [uniqueIndex("task_events_task_id_sequence_key").on(table.taskId, table.sequence)]
+  (table) => [
+    uniqueIndex("task_events_task_id_sequence_key").on(table.taskId, table.sequence),
+    check("task_events_sequence_check", sql`${table.sequence} > 0`)
+  ]
 );
