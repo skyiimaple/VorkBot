@@ -13,6 +13,7 @@ export const ConversationSchema = z.object({
 
 export const MessageSchema = z.object({
   id: IdentifierSchema,
+  userId: IdentifierSchema,
   conversationId: IdentifierSchema,
   authorType: z.enum(["user", "assistant"]),
   content: z.string().min(1),

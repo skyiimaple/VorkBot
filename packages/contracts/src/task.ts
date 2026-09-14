@@ -17,6 +17,7 @@ export const TaskSchema = z.object({
 export const TaskEventSchema = z.object({
   id: IdentifierSchema,
   taskId: IdentifierSchema,
+  userId: IdentifierSchema,
   sequence: z.number().int().positive(),
   type: z.string().min(1),
   payload: z.unknown(),
