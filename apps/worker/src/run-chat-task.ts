@@ -25,7 +25,13 @@ export async function runChatTask(rawJob: TaskJob, deps: RunChatTaskDependencies
   if (!task || terminalStatuses.has(task.status) || task.status === "running") return;
 
   try {
-    await deps.repos.appendTaskEvent({ taskId: task.id, type: "task.running", payload: {} });
+    try {
+      await deps.repos.appendTaskEvent({ taskId: task.id, type: "task.running", payload: {} });
+    } catch (error) {
+      const claimedTask = await deps.repos.getTask(task.id);
+      if (!claimedTask || claimedTask.status === "running" || terminalStatuses.has(claimedTask.status)) return;
+      throw error;
+    }
     await notify(deps.notifier, task.id);
 
     const messages = await deps.repos.listMessages({ userId: task.userId, conversationId: task.conversationId });

@@ -75,6 +75,67 @@ describe("runChatTask", () => {
     expect(await repos.listTaskEvents(job.taskId, 0)).toHaveLength(5);
   });
 
+  it("lets only one concurrent delivery claim and complete a queued task", async () => {
+    const job = await createJob();
+    let initialReads = 0;
+    let releaseInitialReads: () => void;
+    const initialReadsComplete = new Promise<void>((resolve) => {
+      releaseInitialReads = resolve;
+    });
+    let releaseReply: () => void;
+    const replyGate = new Promise<void>((resolve) => {
+      releaseReply = resolve;
+    });
+    const concurrentRepos = {
+      ...repos,
+      getTask: async (taskId: string) => {
+        const snapshot = await repos.getTask(taskId);
+        initialReads += 1;
+        if (initialReads <= 2) {
+          if (initialReads === 2) releaseInitialReads!();
+          await initialReadsComplete;
+        }
+        return snapshot;
+      }
+    };
+    const blockingModel = {
+      async *streamReply(): AsyncIterable<string> {
+        await replyGate;
+        yield "并发回复";
+      }
+    };
+    const deliveries = [
+      runChatTask(job, { repos: concurrentRepos, model: blockingModel, notifier }),
+      runChatTask(job, { repos: concurrentRepos, model: blockingModel, notifier })
+    ];
+
+    try {
+      await Promise.race(deliveries);
+      expect((await repos.getTask(job.taskId))?.status).toBe("running");
+      expect((await repos.listTaskEvents(job.taskId, 0)).map((event) => event.type)).toEqual([
+        "task.queued",
+        "task.running"
+      ]);
+
+      releaseReply!();
+      await Promise.all(deliveries);
+
+      expect((await repos.getTask(job.taskId))?.status).toBe("completed");
+      expect((await repos.listTaskEvents(job.taskId, 0)).map((event) => event.type)).toEqual([
+        "task.queued",
+        "task.running",
+        "message.delta",
+        "message.completed",
+        "task.completed"
+      ]);
+      const messages = await repos.listMessages({ userId: job.userId, conversationId: job.conversationId });
+      expect(messages.filter((message) => message.authorType === "assistant")).toHaveLength(1);
+    } finally {
+      releaseReply!();
+      await Promise.allSettled(deliveries);
+    }
+  });
+
   it("records a redacted error code when the model fails", async () => {
     const job = await createJob("请勿持久化这段用户消息");
     const failingModel = {
