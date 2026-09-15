@@ -1,9 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { CreateBotInputSchema, CreateQueuedMessageTaskInputSchema, MessageSchema, QueuedMessageTaskResultSchema, TaskEventSchema } from "./index";
+import { CreateBotInputSchema, CreateBotRepositoryInputSchema, CreateQueuedMessageTaskInputSchema, ListBotsInputSchema, MessageSchema, QueuedMessageTaskResultSchema, TaskEventSchema } from "./index";
 
 describe("contracts", () => {
   it("rejects a blank Bot name", () => {
     expect(CreateBotInputSchema.safeParse({ name: "", persona: "Research" }).success).toBe(false);
+  });
+
+  it("rejects blank user ownership at the Bot repository boundary", () => {
+    expect(
+      CreateBotRepositoryInputSchema.safeParse({ userId: "   ", name: "Research", persona: "Researcher" }).success
+    ).toBe(false);
+    expect(ListBotsInputSchema.safeParse({ userId: "   " }).success).toBe(false);
   });
 
   it("accepts an ordered task event", () => {

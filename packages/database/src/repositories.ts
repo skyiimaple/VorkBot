@@ -2,10 +2,12 @@ import { nanoid } from "nanoid";
 import {
   BotSchema,
   ConversationSchema,
+  CreateBotRepositoryInputSchema,
   CreateConversationRepositoryInputSchema,
   CreateQueuedMessageTaskInputSchema,
   GetBotInputSchema,
   GetConversationInputSchema,
+  ListBotsInputSchema,
   ListMessagesInputSchema,
   MessageSchema,
   QueuedMessageTaskResultSchema
@@ -13,6 +15,7 @@ import {
 import type {
   Bot,
   Conversation,
+  CreateBotRepositoryInput as ContractCreateBotRepositoryInput,
   CreateConversationRepositoryInput as ContractCreateConversationRepositoryInput,
   CreateQueuedMessageTaskInput,
   Message,
@@ -71,11 +74,7 @@ type TaskEventRow = {
   created_at: DateValue;
 };
 
-export type CreateBotRepositoryInput = {
-  userId: string;
-  name: string;
-  persona: string;
-};
+export type CreateBotRepositoryInput = ContractCreateBotRepositoryInput;
 
 export type CreateConversationRepositoryInput = ContractCreateConversationRepositoryInput;
 
@@ -187,7 +186,8 @@ export function createRepositories(options: DatabaseClientOptions = {}) {
   return {
     close: client.close,
 
-    async createBot(input: CreateBotRepositoryInput): Promise<Bot> {
+    async createBot(rawInput: CreateBotRepositoryInput): Promise<Bot> {
+      const input = CreateBotRepositoryInputSchema.parse(rawInput);
       const now = new Date().toISOString();
       await sql`
         INSERT INTO users (id, created_at, updated_at)
@@ -199,17 +199,18 @@ export function createRepositories(options: DatabaseClientOptions = {}) {
         VALUES (${id("bot")}, ${input.userId}, ${input.name}, ${input.persona}, ${now}, ${now})
         RETURNING id, user_id, name, persona, created_at, updated_at
       `;
-      return toBot(required(rows, "Bot could not be created"));
+      return BotSchema.parse(toBot(required(rows, "Bot could not be created")));
     },
 
     async listBots(userId: string): Promise<Bot[]> {
+      const input = ListBotsInputSchema.parse({ userId });
       const rows = await sql<BotRow[]>`
         SELECT id, user_id, name, persona, created_at, updated_at
         FROM bots
-        WHERE user_id = ${userId}
+        WHERE user_id = ${input.userId}
         ORDER BY created_at ASC, id ASC
       `;
-      return rows.map(toBot);
+      return rows.map((row) => BotSchema.parse(toBot(row)));
     },
 
     async createConversation(rawInput: unknown): Promise<Conversation> {

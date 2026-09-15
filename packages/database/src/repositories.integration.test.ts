@@ -37,6 +37,16 @@ describe("repositories", () => {
     expect((await repos.listTaskEvents(task.id, 1)).map((event) => event.sequence)).toEqual([2]);
   });
 
+  it("rejects invalid Bot repository inputs before writing or querying", async () => {
+    await expect(
+      repos.createBot({ userId: "   ", name: "不应创建", persona: "验证 userId" })
+    ).rejects.toMatchObject({ name: "ZodError" });
+    await expect(
+      repos.createBot({ userId: "user_local", name: "   ", persona: "验证名称" })
+    ).rejects.toMatchObject({ name: "ZodError" });
+    await expect(repos.listBots("   ")).rejects.toMatchObject({ name: "ZodError" });
+  });
+
   it("allocates distinct, monotonic event sequences for concurrent writes", async () => {
     const bot = await repos.createBot({ userId: "user_local", name: "并发 Bot", persona: "测试事件事务" });
     const conversation = await repos.createConversation({ userId: "user_local", botId: bot.id });
