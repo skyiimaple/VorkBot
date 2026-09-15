@@ -1,0 +1,28 @@
+{
+  "name": "@vork/desktop",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./out/main/index.js",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "lint": "tsc --noEmit",
+    "build": "electron-vite build"
+  },
+  "dependencies": {
+    "@vork/contracts": "workspace:*",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.2",
+    "@types/react": "^19.1.16",
+    "@types/react-dom": "^19.1.9",
+    "electron": "^37.4.0",
+    "electron-vite": "^5.0.0",
+    "vite": "^7.0.0"
+  }
+}
