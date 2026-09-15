@@ -6,6 +6,7 @@ export type {
   CompleteTaskWithMessageRepositoryInput,
   CreateBotRepositoryInput,
   CreateConversationRepositoryInput,
+  CreateQueuedMessageTaskRepositoryInput,
   CreateTaskRepositoryInput,
   Repositories
 } from "./repositories.js";

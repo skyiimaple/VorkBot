@@ -58,6 +58,33 @@ describe("repositories", () => {
     expect(events.map((event) => event.sequence)).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
   });
 
+  it("creates a user message, queued task, and first event in one repository operation", async () => {
+    const bot = await repos.createBot({ userId: "user_local", name: "原子 Bot", persona: "测试消息队列事务" });
+    const conversation = await repos.createConversation({ userId: "user_local", botId: bot.id });
+
+    const queued = await repos.createQueuedMessageTask({
+      userId: "user_local",
+      botId: bot.id,
+      conversationId: conversation.id,
+      content: "原子提交"
+    });
+
+    expect(queued.message).toMatchObject({
+      userId: "user_local",
+      conversationId: conversation.id,
+      authorType: "user",
+      content: "原子提交"
+    });
+    expect(queued.task).toMatchObject({
+      userId: "user_local",
+      botId: bot.id,
+      conversationId: conversation.id,
+      messageId: queued.message.id,
+      status: "queued"
+    });
+    expect(await repos.listTaskEvents(queued.task.id, 0)).toMatchObject([{ type: "task.queued", sequence: 1 }]);
+  });
+
   it("completes a task atomically with its assistant message and terminal events", async () => {
     const bot = await repos.createBot({ userId: "user_local", name: "完成 Bot", persona: "测试完成事务" });
     const conversation = await repos.createConversation({ userId: "user_local", botId: bot.id });

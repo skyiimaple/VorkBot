@@ -76,6 +76,13 @@ export type CreateTaskRepositoryInput = {
   messageId: string;
 };
 
+export type CreateQueuedMessageTaskRepositoryInput = {
+  userId: string;
+  botId: string;
+  conversationId: string;
+  content: string;
+};
+
 export type AppendTaskEventRepositoryInput = {
   taskId: string;
   type: string;
@@ -216,6 +223,15 @@ export function createRepositories(options: DatabaseClientOptions = {}) {
       });
     },
 
+    async getConversation(userId: string, conversationId: string): Promise<Conversation | null> {
+      const rows = await sql<ConversationRow[]>`
+        SELECT id, user_id, bot_id, created_at, updated_at
+        FROM conversations
+        WHERE id = ${conversationId} AND user_id = ${userId}
+      `;
+      return rows[0] ? toConversation(rows[0]) : null;
+    },
+
     async appendMessage(input: AppendMessageRepositoryInput): Promise<Message> {
       const conversationRows = await sql<{ user_id: string }[]>`
         SELECT user_id FROM conversations WHERE id = ${input.conversationId}
@@ -228,6 +244,17 @@ export function createRepositories(options: DatabaseClientOptions = {}) {
         RETURNING id, user_id, conversation_id, author_type, content, created_at
       `;
       return toMessage(required(rows, "Message could not be appended"));
+    },
+
+    async listMessages(userId: string, conversationId: string): Promise<Message[]> {
+      const rows = await sql<MessageRow[]>`
+        SELECT messages.id, messages.user_id, messages.conversation_id, messages.author_type, messages.content, messages.created_at
+        FROM messages
+        INNER JOIN conversations ON conversations.id = messages.conversation_id
+        WHERE messages.conversation_id = ${conversationId} AND conversations.user_id = ${userId}
+        ORDER BY messages.created_at ASC, messages.id ASC
+      `;
+      return rows.map(toMessage);
     },
 
     async createTask(input: CreateTaskRepositoryInput): Promise<Task> {
@@ -252,6 +279,44 @@ export function createRepositories(options: DatabaseClientOptions = {}) {
         RETURNING id, user_id, bot_id, conversation_id, message_id, status, last_event_sequence, created_at, updated_at
       `;
       return toTask(required(rows, "Task could not be created"));
+    },
+
+    async createQueuedMessageTask(
+      input: CreateQueuedMessageTaskRepositoryInput
+    ): Promise<{ message: Message; task: Task; event: TaskEvent }> {
+      return sql.begin(async (transaction) => {
+        const ownershipRows = await transaction<{ id: string }[]>`
+          SELECT conversations.id
+          FROM conversations
+          INNER JOIN bots ON bots.id = conversations.bot_id
+          WHERE conversations.id = ${input.conversationId}
+            AND conversations.user_id = ${input.userId}
+            AND conversations.bot_id = ${input.botId}
+            AND bots.user_id = ${input.userId}
+          FOR SHARE
+        `;
+        required(ownershipRows, "Task references resources outside its user ownership boundary");
+
+        const now = new Date().toISOString();
+        const messageRows = await transaction<MessageRow[]>`
+          INSERT INTO messages (id, user_id, conversation_id, author_type, content, created_at)
+          VALUES (${id("message")}, ${input.userId}, ${input.conversationId}, 'user', ${input.content}, ${now})
+          RETURNING id, user_id, conversation_id, author_type, content, created_at
+        `;
+        const message = required(messageRows, "Message could not be appended");
+        const taskRows = await transaction<TaskRow[]>`
+          INSERT INTO tasks (id, user_id, bot_id, conversation_id, message_id, status, last_event_sequence, created_at, updated_at)
+          VALUES (${id("task")}, ${input.userId}, ${input.botId}, ${input.conversationId}, ${message.id}, 'queued', 1, ${now}, ${now})
+          RETURNING id, user_id, bot_id, conversation_id, message_id, status, last_event_sequence, created_at, updated_at
+        `;
+        const task = required(taskRows, "Task could not be created");
+        const eventRows = await transaction<TaskEventRow[]>`
+          INSERT INTO task_events (id, task_id, user_id, sequence, type, payload, created_at)
+          VALUES (${id("event")}, ${task.id}, ${input.userId}, 1, 'task.queued', ${JSON.stringify({})}::jsonb, ${now})
+          RETURNING id, task_id, user_id, sequence, type, payload, created_at
+        `;
+        return { message: toMessage(message), task: toTask(task), event: toTaskEvent(required(eventRows, "Task event could not be appended")) };
+      });
     },
 
     async getTask(taskId: string): Promise<Task | null> {

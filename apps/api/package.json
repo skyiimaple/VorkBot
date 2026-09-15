@@ -1,0 +1,24 @@
+{
+  "name": "@vork/api",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "lint": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@vork/contracts": "workspace:*",
+    "@vork/database": "workspace:*",
+    "bullmq": "^6.3.6",
+    "fastify": "^5.12.4",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.2",
+    "@vork/test-support": "workspace:*",
+    "tsx": "^4.23.13"
+  }
+}
