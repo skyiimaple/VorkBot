@@ -5,20 +5,26 @@ import { registerRequestContext } from "./plugins/request-context.js";
 import { registerBotRoutes } from "./routes/bots.js";
 import { registerConversationRoutes } from "./routes/conversations.js";
 import type { TaskQueue } from "./services/chat-service.js";
+import { RedisTaskEventSubscriber, type TaskEventSubscriber } from "./services/event-stream.js";
+import { registerTaskEventRoutes } from "./routes/task-events.js";
 
 const ErrorResponseSchema = z.object({ error: z.string().min(1) });
 
 export type ApiDependencies = {
   repositories: Repositories;
   queue: TaskQueue;
+  eventSubscriber?: TaskEventSubscriber;
   userId?: string;
 };
 
 export function buildApp(dependencies: ApiDependencies): FastifyInstance {
   const app = Fastify();
+  const eventSubscriber = dependencies.eventSubscriber ?? new RedisTaskEventSubscriber(process.env.REDIS_URL ?? "redis://127.0.0.1:6379");
+  const routeDependencies: ApiDependencies & { eventSubscriber: TaskEventSubscriber } = { ...dependencies, eventSubscriber };
   registerRequestContext(app, dependencies.userId);
-  registerBotRoutes(app, dependencies);
-  registerConversationRoutes(app, dependencies);
+  registerBotRoutes(app, routeDependencies);
+  registerConversationRoutes(app, routeDependencies);
+  registerTaskEventRoutes(app, routeDependencies);
   app.setErrorHandler((error, _request, reply) => {
     if (error instanceof ZodError) {
       return reply.code(400).send(ErrorResponseSchema.parse({ error: "Invalid request" }));

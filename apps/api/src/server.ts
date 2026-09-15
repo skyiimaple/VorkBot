@@ -2,6 +2,7 @@ import { Queue } from "bullmq";
 import { createRepositories } from "@vork/database";
 import { z } from "zod";
 import { buildApp } from "./app.js";
+import { RedisTaskEventSubscriber } from "./services/event-stream.js";
 
 const ServerConfigSchema = z.object({
   databaseUrl: z.string().url().optional(),
@@ -25,7 +26,8 @@ export async function start(): Promise<void> {
     repositories,
     queue: {
       publish: (job) => queue.add("execute-task", job, { jobId: job.taskId })
-    }
+    },
+    eventSubscriber: new RedisTaskEventSubscriber(`redis://${config.redisHost}:${config.redisPort}`)
   });
   app.addHook("onClose", async () => {
     await queue.close();
