@@ -1,17 +1,20 @@
-import { MessageSchema, TaskJobSchema, TaskSchema, type TaskJob } from "@vork/contracts";
+import {
+  CreateQueuedMessageTaskInputSchema,
+  QueuedMessageTaskResultSchema,
+  TaskJobSchema,
+  TaskPublicationFailureResponseSchema,
+  TaskSchema,
+  type TaskJob
+} from "@vork/contracts";
 import type { Repositories } from "@vork/database";
-import { z } from "zod";
-
-const SubmitMessageInputSchema = z.object({
-  userId: z.string().min(1),
-  botId: z.string().min(1),
-  conversationId: z.string().min(1),
-  content: z.string().trim().min(1)
-});
 
 export type TaskQueue = {
   publish(job: TaskJob): Promise<unknown>;
 };
+
+export type SubmitMessageResult =
+  | { kind: "queued"; message: ReturnType<typeof QueuedMessageTaskResultSchema.parse>["message"]; task: ReturnType<typeof QueuedMessageTaskResultSchema.parse>["task"] }
+  | { kind: "publication_failed"; response: ReturnType<typeof TaskPublicationFailureResponseSchema.parse> };
 
 export class ChatService {
   constructor(
@@ -19,9 +22,9 @@ export class ChatService {
     private readonly queue: TaskQueue
   ) {}
 
-  async submitMessage(rawInput: unknown) {
-    const input = SubmitMessageInputSchema.parse(rawInput);
-    const queued = await this.repositories.createQueuedMessageTask(input);
+  async submitMessage(rawInput: unknown): Promise<SubmitMessageResult> {
+    const input = CreateQueuedMessageTaskInputSchema.parse(rawInput);
+    const queued = QueuedMessageTaskResultSchema.parse(await this.repositories.createQueuedMessageTask(input));
     const job = TaskJobSchema.parse({
       taskId: queued.task.id,
       userId: input.userId,
@@ -33,15 +36,19 @@ export class ChatService {
     try {
       await this.queue.publish(job);
     } catch {
-      await this.repositories.failTask(queued.task.id, "TASK_PUBLICATION_FAILED");
+      const task = TaskSchema.parse(await this.repositories.failTask(queued.task.id, "TASK_PUBLICATION_FAILED"));
       return {
-        message: MessageSchema.parse(queued.message),
-        task: TaskSchema.parse((await this.repositories.getTask(queued.task.id))!)
+        kind: "publication_failed",
+        response: TaskPublicationFailureResponseSchema.parse({
+          error: { code: "TASK_PUBLICATION_FAILED" },
+          task
+        })
       };
     }
 
     return {
-      message: MessageSchema.parse(queued.message),
+      kind: "queued",
+      message: queued.message,
       task: TaskSchema.parse(queued.task)
     };
   }

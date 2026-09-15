@@ -85,6 +85,20 @@ describe("repositories", () => {
     expect(await repos.listTaskEvents(queued.task.id, 0)).toMatchObject([{ type: "task.queued", sequence: 1 }]);
   });
 
+  it("rejects an invalid queued-message input before it can create a message", async () => {
+    const bot = await repos.createBot({ userId: "user_local", name: "验证 Bot", persona: "验证仓储输入" });
+    const conversation = await repos.createConversation({ userId: "user_local", botId: bot.id });
+
+    await expect(
+      repos.createQueuedMessageTask({
+        userId: "user_local",
+        botId: bot.id,
+        conversationId: conversation.id,
+        content: "   "
+      })
+    ).rejects.toMatchObject({ name: "ZodError" });
+  });
+
   it("completes a task atomically with its assistant message and terminal events", async () => {
     const bot = await repos.createBot({ userId: "user_local", name: "完成 Bot", persona: "测试完成事务" });
     const conversation = await repos.createConversation({ userId: "user_local", botId: bot.id });

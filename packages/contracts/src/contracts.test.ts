@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CreateBotInputSchema, MessageSchema, TaskEventSchema } from "./index";
+import { CreateBotInputSchema, CreateQueuedMessageTaskInputSchema, MessageSchema, QueuedMessageTaskResultSchema, TaskEventSchema } from "./index";
 
 describe("contracts", () => {
   it("rejects a blank Bot name", () => {
@@ -42,5 +42,50 @@ describe("contracts", () => {
         createdAt: "2026-09-14T00:00:00.000Z"
       }).success
     ).toBe(false);
+  });
+
+  it("rejects whitespace-only content before a queued message task reaches persistence", () => {
+    expect(
+      CreateQueuedMessageTaskInputSchema.safeParse({
+        userId: "user_1",
+        botId: "bot_1",
+        conversationId: "conversation_1",
+        content: "   "
+      }).success
+    ).toBe(false);
+  });
+
+  it("accepts the complete queued-message repository result", () => {
+    expect(
+      QueuedMessageTaskResultSchema.safeParse({
+        message: {
+          id: "message_1",
+          userId: "user_1",
+          conversationId: "conversation_1",
+          authorType: "user",
+          content: "hello",
+          createdAt: "2026-09-14T00:00:00.000Z"
+        },
+        task: {
+          id: "task_1",
+          userId: "user_1",
+          botId: "bot_1",
+          conversationId: "conversation_1",
+          messageId: "message_1",
+          status: "queued",
+          createdAt: "2026-09-14T00:00:00.000Z",
+          updatedAt: "2026-09-14T00:00:00.000Z"
+        },
+        event: {
+          id: "event_1",
+          taskId: "task_1",
+          userId: "user_1",
+          sequence: 1,
+          type: "task.queued",
+          payload: {},
+          createdAt: "2026-09-14T00:00:00.000Z"
+        }
+      }).success
+    ).toBe(true);
   });
 });

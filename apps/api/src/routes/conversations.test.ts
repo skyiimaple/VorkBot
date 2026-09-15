@@ -49,6 +49,21 @@ describe("conversation routes", () => {
     expect(response.json()).toMatchObject({ conversation: { botId: bot.id, userId: "user_local" } });
   });
 
+  it("returns the same not-found response for missing and foreign Bots", async () => {
+    const foreignBot = await repositories.createBot({ userId: "user_other", name: "他人的 Bot", persona: "不可访问" });
+
+    for (const botId of ["bot_missing", foreignBot.id]) {
+      const response = await app.inject({
+        method: "POST",
+        url: "/v1/conversations",
+        payload: { botId }
+      });
+
+      expect(response.statusCode).toBe(404);
+      expect(response.json()).toEqual({ error: "Bot not found" });
+    }
+  });
+
   it("rejects an empty message", async () => {
     const conversation = await createConversation();
 
@@ -106,6 +121,12 @@ describe("conversation routes", () => {
     expect(response.json()).toEqual({ error: "Conversation not found" });
   });
 
+  it("rejects a whitespace-only conversation route ID", async () => {
+    const response = await app.inject({ method: "GET", url: "/v1/conversations/%20/messages" });
+
+    expect(response.statusCode).toBe(400);
+  });
+
   it("marks the task failed if publication fails after commit", async () => {
     const failingApp = buildApp({
       repositories,
@@ -119,7 +140,11 @@ describe("conversation routes", () => {
       payload: { content: "队列失败" }
     });
 
-    expect(response.statusCode).toBe(202);
+    expect(response.statusCode).toBe(503);
+    expect(response.json()).toMatchObject({
+      error: { code: "TASK_PUBLICATION_FAILED" },
+      task: { status: "failed" }
+    });
     const { task } = response.json();
     expect(await repositories.getTask(task.id)).toMatchObject({ status: "failed" });
     expect(await repositories.listTaskEvents(task.id, 0)).toMatchObject([

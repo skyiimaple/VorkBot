@@ -1,11 +1,11 @@
-import { ConversationSchema, MessageSchema, TaskSchema } from "@vork/contracts";
+import { ConversationSchema, MessageSchema, TaskPublicationFailureResponseSchema, TaskSchema } from "@vork/contracts";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import type { ApiDependencies } from "../app.js";
 import { ChatService } from "../services/chat-service.js";
 
-const CreateConversationInputSchema = z.object({ botId: z.string().min(1) });
-const ConversationParamsSchema = z.object({ id: z.string().min(1) });
+const CreateConversationInputSchema = z.object({ botId: z.string().trim().min(1) });
+const ConversationParamsSchema = z.object({ id: z.string().trim().min(1) });
 const CreateMessageInputSchema = z.object({ content: z.string().trim().min(1) });
 const CreateConversationResponseSchema = z.object({ conversation: ConversationSchema });
 const ListMessagesResponseSchema = z.object({ messages: z.array(MessageSchema) });
@@ -17,6 +17,9 @@ export function registerConversationRoutes(app: FastifyInstance, dependencies: A
 
   app.post("/v1/conversations", async (request, reply) => {
     const input = CreateConversationInputSchema.parse(request.body);
+    if (!(await dependencies.repositories.getBot({ userId: request.userId, botId: input.botId }))) {
+      return reply.code(404).send(ErrorResponseSchema.parse({ error: "Bot not found" }));
+    }
     const conversation = ConversationSchema.parse(
       await dependencies.repositories.createConversation({ userId: request.userId, botId: input.botId })
     );
@@ -25,26 +28,32 @@ export function registerConversationRoutes(app: FastifyInstance, dependencies: A
 
   app.get("/v1/conversations/:id/messages", async (request, reply) => {
     const { id } = ConversationParamsSchema.parse(request.params);
-    if (!(await dependencies.repositories.getConversation(request.userId, id))) {
+    const conversation = await dependencies.repositories.getConversation({ userId: request.userId, conversationId: id });
+    if (!conversation) {
       return reply.code(404).send(ErrorResponseSchema.parse({ error: "Conversation not found" }));
     }
-    const messages = await dependencies.repositories.listMessages(request.userId, id);
+    ConversationSchema.parse(conversation);
+    const messages = await dependencies.repositories.listMessages({ userId: request.userId, conversationId: id });
     return ListMessagesResponseSchema.parse({ messages });
   });
 
   app.post("/v1/conversations/:id/messages", async (request, reply) => {
     const { id } = ConversationParamsSchema.parse(request.params);
     const { content } = CreateMessageInputSchema.parse(request.body);
-    const conversation = await dependencies.repositories.getConversation(request.userId, id);
+    const conversation = await dependencies.repositories.getConversation({ userId: request.userId, conversationId: id });
     if (!conversation) {
       return reply.code(404).send(ErrorResponseSchema.parse({ error: "Conversation not found" }));
     }
+    const validatedConversation = ConversationSchema.parse(conversation);
     const result = await chatService.submitMessage({
       userId: request.userId,
-      botId: conversation.botId,
+      botId: validatedConversation.botId,
       conversationId: id,
       content
     });
+    if (result.kind === "publication_failed") {
+      return reply.code(503).send(TaskPublicationFailureResponseSchema.parse(result.response));
+    }
     return reply.code(202).send(SubmitMessageResponseSchema.parse(result));
   });
 }

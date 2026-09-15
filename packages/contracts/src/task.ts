@@ -1,6 +1,7 @@
 import { z } from "zod";
+import { MessageSchema } from "./conversation.js";
 
-const IdentifierSchema = z.string().min(1);
+const IdentifierSchema = z.string().trim().min(1);
 const DateTimeSchema = z.string().datetime();
 
 export const TaskSchema = z.object({
@@ -32,6 +33,27 @@ export const TaskJobSchema = z.object({
   messageId: z.string().min(1)
 });
 
+export const CreateQueuedMessageTaskInputSchema = z.object({
+  userId: IdentifierSchema,
+  botId: IdentifierSchema,
+  conversationId: IdentifierSchema,
+  content: z.string().trim().min(1)
+});
+
+export const QueuedMessageTaskResultSchema = z.object({
+  message: MessageSchema,
+  task: TaskSchema,
+  event: TaskEventSchema
+});
+
+export const TaskPublicationFailureResponseSchema = z.object({
+  error: z.object({ code: z.literal("TASK_PUBLICATION_FAILED") }),
+  task: TaskSchema
+});
+
 export type Task = z.infer<typeof TaskSchema>;
 export type TaskEvent = z.infer<typeof TaskEventSchema>;
 export type TaskJob = z.infer<typeof TaskJobSchema>;
+export type CreateQueuedMessageTaskInput = z.infer<typeof CreateQueuedMessageTaskInputSchema>;
+export type QueuedMessageTaskResult = z.infer<typeof QueuedMessageTaskResultSchema>;
+export type TaskPublicationFailureResponse = z.infer<typeof TaskPublicationFailureResponseSchema>;

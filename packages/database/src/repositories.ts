@@ -1,5 +1,24 @@
 import { nanoid } from "nanoid";
-import type { Bot, Conversation, Message, Task, TaskEvent } from "../../contracts/src/index.js";
+import {
+  BotSchema,
+  ConversationSchema,
+  CreateConversationRepositoryInputSchema,
+  CreateQueuedMessageTaskInputSchema,
+  GetBotInputSchema,
+  GetConversationInputSchema,
+  ListMessagesInputSchema,
+  MessageSchema,
+  QueuedMessageTaskResultSchema
+} from "@vork/contracts";
+import type {
+  Bot,
+  Conversation,
+  CreateConversationRepositoryInput as ContractCreateConversationRepositoryInput,
+  CreateQueuedMessageTaskInput,
+  Message,
+  Task,
+  TaskEvent
+} from "@vork/contracts";
 import { createDatabaseClient, type DatabaseClientOptions } from "./client.js";
 
 type DateValue = Date | string;
@@ -58,10 +77,7 @@ export type CreateBotRepositoryInput = {
   persona: string;
 };
 
-export type CreateConversationRepositoryInput = {
-  userId: string;
-  botId: string;
-};
+export type CreateConversationRepositoryInput = ContractCreateConversationRepositoryInput;
 
 export type AppendMessageRepositoryInput = {
   conversationId: string;
@@ -76,12 +92,7 @@ export type CreateTaskRepositoryInput = {
   messageId: string;
 };
 
-export type CreateQueuedMessageTaskRepositoryInput = {
-  userId: string;
-  botId: string;
-  conversationId: string;
-  content: string;
-};
+export type CreateQueuedMessageTaskRepositoryInput = CreateQueuedMessageTaskInput;
 
 export type AppendTaskEventRepositoryInput = {
   taskId: string;
@@ -201,7 +212,8 @@ export function createRepositories(options: DatabaseClientOptions = {}) {
       return rows.map(toBot);
     },
 
-    async createConversation(input: CreateConversationRepositoryInput): Promise<Conversation> {
+    async createConversation(rawInput: unknown): Promise<Conversation> {
+      const input = CreateConversationRepositoryInputSchema.parse(rawInput);
       const botRows = await sql<{ id: string }[]>`
         SELECT id FROM bots WHERE id = ${input.botId} AND user_id = ${input.userId}
       `;
@@ -219,17 +231,28 @@ export function createRepositories(options: DatabaseClientOptions = {}) {
           INSERT INTO conversation_members (conversation_id, user_id, created_at)
           VALUES (${conversation.id}, ${input.userId}, ${now})
         `;
-        return toConversation(conversation);
+        return ConversationSchema.parse(toConversation(conversation));
       });
     },
 
-    async getConversation(userId: string, conversationId: string): Promise<Conversation | null> {
+    async getBot(rawInput: unknown): Promise<Bot | null> {
+      const input = GetBotInputSchema.parse(rawInput);
+      const rows = await sql<BotRow[]>`
+        SELECT id, user_id, name, persona, created_at, updated_at
+        FROM bots
+        WHERE id = ${input.botId} AND user_id = ${input.userId}
+      `;
+      return rows[0] ? BotSchema.parse(toBot(rows[0])) : null;
+    },
+
+    async getConversation(rawInput: unknown): Promise<Conversation | null> {
+      const input = GetConversationInputSchema.parse(rawInput);
       const rows = await sql<ConversationRow[]>`
         SELECT id, user_id, bot_id, created_at, updated_at
         FROM conversations
-        WHERE id = ${conversationId} AND user_id = ${userId}
+        WHERE id = ${input.conversationId} AND user_id = ${input.userId}
       `;
-      return rows[0] ? toConversation(rows[0]) : null;
+      return rows[0] ? ConversationSchema.parse(toConversation(rows[0])) : null;
     },
 
     async appendMessage(input: AppendMessageRepositoryInput): Promise<Message> {
@@ -246,15 +269,16 @@ export function createRepositories(options: DatabaseClientOptions = {}) {
       return toMessage(required(rows, "Message could not be appended"));
     },
 
-    async listMessages(userId: string, conversationId: string): Promise<Message[]> {
+    async listMessages(rawInput: unknown): Promise<Message[]> {
+      const input = ListMessagesInputSchema.parse(rawInput);
       const rows = await sql<MessageRow[]>`
         SELECT messages.id, messages.user_id, messages.conversation_id, messages.author_type, messages.content, messages.created_at
         FROM messages
         INNER JOIN conversations ON conversations.id = messages.conversation_id
-        WHERE messages.conversation_id = ${conversationId} AND conversations.user_id = ${userId}
+        WHERE messages.conversation_id = ${input.conversationId} AND conversations.user_id = ${input.userId}
         ORDER BY messages.created_at ASC, messages.id ASC
       `;
-      return rows.map(toMessage);
+      return rows.map((row) => MessageSchema.parse(toMessage(row)));
     },
 
     async createTask(input: CreateTaskRepositoryInput): Promise<Task> {
@@ -281,9 +305,8 @@ export function createRepositories(options: DatabaseClientOptions = {}) {
       return toTask(required(rows, "Task could not be created"));
     },
 
-    async createQueuedMessageTask(
-      input: CreateQueuedMessageTaskRepositoryInput
-    ): Promise<{ message: Message; task: Task; event: TaskEvent }> {
+    async createQueuedMessageTask(rawInput: unknown): Promise<{ message: Message; task: Task; event: TaskEvent }> {
+      const input = CreateQueuedMessageTaskInputSchema.parse(rawInput);
       return sql.begin(async (transaction) => {
         const ownershipRows = await transaction<{ id: string }[]>`
           SELECT conversations.id
@@ -315,7 +338,11 @@ export function createRepositories(options: DatabaseClientOptions = {}) {
           VALUES (${id("event")}, ${task.id}, ${input.userId}, 1, 'task.queued', ${JSON.stringify({})}::jsonb, ${now})
           RETURNING id, task_id, user_id, sequence, type, payload, created_at
         `;
-        return { message: toMessage(message), task: toTask(task), event: toTaskEvent(required(eventRows, "Task event could not be appended")) };
+        return QueuedMessageTaskResultSchema.parse({
+          message: toMessage(message),
+          task: toTask(task),
+          event: toTaskEvent(required(eventRows, "Task event could not be appended"))
+        });
       });
     },
 
