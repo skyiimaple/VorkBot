@@ -1,0 +1,31 @@
+:root { color: #f5f7fb; background: #111318; font-family: Inter, system-ui, sans-serif; }
+* { box-sizing: border-box; }
+body { margin: 0; min-width: 320px; }
+button, input, textarea { font: inherit; }
+button { cursor: pointer; }
+.app-shell { display: grid; grid-template-columns: 260px minmax(0, 1fr); min-height: 100vh; }
+.sidebar { display: flex; flex-direction: column; gap: 18px; padding: 16px; background: #181b22; border-right: 1px solid #2b303b; }
+.sidebar-top button { width: 34px; height: 34px; border: 0; border-radius: 9px; font-size: 24px; background: #f5f7fb; color: #111318; }
+.search, .sidebar nav { display: grid; gap: 8px; color: #adb5c4; font-size: 13px; }
+.search input { width: 100%; padding: 9px; border: 1px solid #343a47; border-radius: 8px; color: inherit; background: #111318; }
+.sidebar nav button { border: 0; border-radius: 8px; padding: 9px; color: #edf0f5; background: transparent; text-align: left; }
+.sidebar nav button.selected, .sidebar nav button:hover { background: #2a303c; }
+.identity { margin-top: auto; color: #dce2ec; }
+.identity summary { cursor: pointer; }
+.identity a { display: block; margin: 9px 0 0; color: #adb5c4; text-decoration: none; }
+.main-panel { min-width: 0; padding: 42px clamp(24px, 8vw, 120px); }
+.recipient-picker { max-width: 680px; margin: 0 auto; display: grid; gap: 12px; }
+.recipient-picker input { padding: 13px; border: 1px solid #596273; border-radius: 10px; color: inherit; background: #181b22; }
+.recipient-picker [role="listbox"] { display: grid; gap: 6px; }
+.recipient-picker button { padding: 12px; border: 0; border-radius: 8px; text-align: left; color: inherit; background: #232833; }
+.conversation { display: grid; grid-template-rows: auto 1fr auto auto; min-height: calc(100vh - 84px); max-width: 840px; margin: 0 auto; }
+.conversation header { display: flex; align-items: center; justify-content: space-between; }
+.messages { display: grid; align-content: start; gap: 14px; padding: 30px 0; }
+.message { max-width: 80%; padding: 4px 14px; border-radius: 12px; background: #222833; }
+.message.user { justify-self: end; background: #304a7a; }
+.task-status { color: #adb5c4; font-size: 13px; }
+.composer { display: grid; grid-template-columns: 1fr auto; gap: 10px; padding-top: 16px; }
+.composer textarea { min-height: 52px; resize: vertical; padding: 12px; border: 1px solid #434b5b; border-radius: 10px; color: inherit; background: #181b22; }
+.composer button { align-self: end; padding: 11px 16px; border: 0; border-radius: 9px; color: #111318; background: #f5f7fb; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); }
+@media (max-width: 700px) { .app-shell { grid-template-columns: 72px minmax(0, 1fr); } .sidebar { padding: 12px; } .sidebar .search span, .sidebar nav p, .sidebar nav button, .identity summary { display: none; } .main-panel { padding: 24px; } }
