@@ -51,6 +51,16 @@ describe("task event routes", () => {
     throw new Error("SSE subscriber did not connect to Redis");
   }
 
+  async function waitForSubscriberRelease(taskId: string): Promise<void> {
+    const channel = `vork:tasks:${taskId}:events`;
+    for (let attempts = 0; attempts < 100; attempts += 1) {
+      const [, subscribers] = await publisher.pubsub("NUMSUB", channel);
+      if (Number(subscribers) === 0) return;
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    throw new Error("SSE subscriber was not released after the client disconnected");
+  }
+
   it("replays only events after the supplied cursor", async () => {
     const task = await seedTaskEvents(["task.queued", "task.running", "message.delta"]);
 
@@ -69,6 +79,7 @@ describe("task event routes", () => {
     await publisher.publish(`vork:tasks:${task.id}:events`, JSON.stringify({ taskId: task.id }));
 
     expect((await response).events.map((event) => event.id)).toEqual(["1", "2"]);
+    await waitForSubscriberRelease(task.id);
   });
 
   it("does not duplicate events for duplicate Redis wake-ups", async () => {
@@ -81,5 +92,32 @@ describe("task event routes", () => {
     await publisher.publish(`vork:tasks:${task.id}:events`, notification);
 
     expect((await response).events.map((event) => event.id)).toEqual(["1", "2"]);
+  });
+
+  it("does not expose a task owned by another user", async () => {
+    const bot = await repositories.createBot({ userId: "user_other", name: "Private SSE Bot", persona: "私有" });
+    const conversation = await repositories.createConversation({ userId: "user_other", botId: bot.id });
+    const queued = await repositories.createQueuedMessageTask({
+      userId: "user_other",
+      botId: bot.id,
+      conversationId: conversation.id,
+      content: "不应被读取"
+    });
+
+    const response = await app.inject({ method: "GET", url: `/v1/tasks/${queued.task.id}/events?after=0` });
+
+    expect(response.statusCode).toBe(404);
+    expect(response.json()).toEqual({ error: "Task not found" });
+  });
+
+  it("rejects negative, non-numeric, and fractional event cursors", async () => {
+    const task = await seedTaskEvents(["task.queued"]);
+
+    for (const after of ["-1", "not-a-number", "1.5"]) {
+      const response = await app.inject({ method: "GET", url: `/v1/tasks/${task.id}/events?after=${after}` });
+
+      expect(response.statusCode).toBe(400);
+      expect(response.json()).toEqual({ error: "Invalid request" });
+    }
   });
 });

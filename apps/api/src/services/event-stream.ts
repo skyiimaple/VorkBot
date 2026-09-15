@@ -1,5 +1,5 @@
 import Redis from "ioredis";
-import type { TaskEvent } from "@vork/contracts";
+import { TaskEventSchema, type TaskEvent } from "@vork/contracts";
 import type { Repositories } from "@vork/database";
 
 const HEARTBEAT_INTERVAL_MS = 20_000;
@@ -30,7 +30,13 @@ export class RedisTaskEventSubscriber implements TaskEventSubscriber {
       if (receivedChannel === channel) onNotification();
     };
     redis.on("message", onMessage);
-    await redis.subscribe(channel);
+    try {
+      await redis.subscribe(channel);
+    } catch (error) {
+      redis.off("message", onMessage);
+      redis.disconnect();
+      throw error;
+    }
 
     return {
       async close(): Promise<void> {
@@ -109,5 +115,6 @@ export class TaskEventStream {
 }
 
 function serializeTaskEvent(event: TaskEvent): string {
-  return `id: ${event.sequence}\nevent: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`;
+  const parsedEvent = TaskEventSchema.parse(event);
+  return `id: ${parsedEvent.sequence}\nevent: ${parsedEvent.type}\ndata: ${JSON.stringify(parsedEvent)}\n\n`;
 }
