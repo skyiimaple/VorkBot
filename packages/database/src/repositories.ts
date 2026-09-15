@@ -7,6 +7,7 @@ import {
   CreateQueuedMessageTaskInputSchema,
   GetBotInputSchema,
   GetConversationInputSchema,
+  ListConversationsInputSchema,
   ListBotsInputSchema,
   ListMessagesInputSchema,
   MessageSchema,
@@ -254,6 +255,17 @@ export function createRepositories(options: DatabaseClientOptions = {}) {
         WHERE id = ${input.conversationId} AND user_id = ${input.userId}
       `;
       return rows[0] ? ConversationSchema.parse(toConversation(rows[0])) : null;
+    },
+
+    async listConversations(userId: string): Promise<Conversation[]> {
+      const input = ListConversationsInputSchema.parse({ userId });
+      const rows = await sql<ConversationRow[]>`
+        SELECT id, user_id, bot_id, created_at, updated_at
+        FROM conversations
+        WHERE user_id = ${input.userId}
+        ORDER BY updated_at DESC, id DESC
+      `;
+      return rows.map((row) => ConversationSchema.parse(toConversation(row)));
     },
 
     async appendMessage(input: AppendMessageRepositoryInput): Promise<Message> {

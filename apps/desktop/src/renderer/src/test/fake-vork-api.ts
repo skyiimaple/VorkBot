@@ -5,6 +5,7 @@ import { vi } from "vitest";
 const now = "2026-09-15T00:00:00.000Z";
 
 export type FakeVorkApi = VorkApi & {
+  request: ReturnType<typeof vi.fn>;
   createBot: ReturnType<typeof vi.fn>;
   subscribeCalls: Array<{ taskId: string; afterSequence: number }>;
   emitTaskEvent(taskId: string, event: TaskEvent): void;
@@ -32,6 +33,8 @@ export function createFakeVorkApi(): FakeVorkApi {
     switch (input.operation) {
       case "listBots":
         return { operation: "listBots", data: { bots: [...bots] } };
+      case "listConversations":
+        return { operation: "listConversations", data: { conversations: [...conversations] } };
       case "createBot":
         return createBot(input.input);
       case "createConversation": {

@@ -17,7 +17,6 @@ export function useConversation(conversationId: string) {
   const [activeTask, setActiveTask] = useState<Task>();
   const [connectionState, setConnectionState] = useState<ConnectionState>("loading");
   const lastSequence = useRef(0);
-  const [subscriptionVersion, setSubscriptionVersion] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -45,9 +44,8 @@ export function useConversation(conversationId: string) {
       if (event.sequence <= lastSequence.current) return;
       lastSequence.current = event.sequence;
       mergeTaskEvent(event, conversationId, setMessages, setActiveTask);
-      setSubscriptionVersion((version) => version + 1);
     });
-  }, [activeTask?.id, api, subscriptionVersion]);
+  }, [activeTask?.id, api, conversationId]);
 
   const sendMessage = useCallback(
     async (content: string) => {
@@ -55,7 +53,6 @@ export function useConversation(conversationId: string) {
       if (response.operation !== "submitMessage") throw new Error("Unexpected Vork API response");
       setMessages((current) => [...current, response.data.message]);
       lastSequence.current = 0;
-      setSubscriptionVersion((version) => version + 1);
       setActiveTask(response.data.task);
     },
     [api, conversationId]

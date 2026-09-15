@@ -12,6 +12,7 @@ const IdentifierSchema = z.string().trim().min(1);
 
 export const ApiRequestSchema = z.discriminatedUnion("operation", [
   z.object({ operation: z.literal("listBots"), input: z.object({}).strict() }).strict(),
+  z.object({ operation: z.literal("listConversations"), input: z.object({}).strict() }).strict(),
   z.object({ operation: z.literal("createBot"), input: CreateBotInputSchema.strict() }).strict(),
   z.object({ operation: z.literal("createConversation"), input: z.object({ botId: IdentifierSchema }).strict() }).strict(),
   z.object({ operation: z.literal("listMessages"), input: z.object({ conversationId: IdentifierSchema }).strict() }).strict(),
@@ -25,6 +26,7 @@ export const ApiRequestSchema = z.discriminatedUnion("operation", [
 
 export const ApiResponseSchema = z.discriminatedUnion("operation", [
   z.object({ operation: z.literal("listBots"), data: z.object({ bots: z.array(BotSchema) }).strict() }).strict(),
+  z.object({ operation: z.literal("listConversations"), data: z.object({ conversations: z.array(ConversationSchema) }).strict() }).strict(),
   z.object({ operation: z.literal("createBot"), data: z.object({ bot: BotSchema, conversation: ConversationSchema }).strict() }).strict(),
   z.object({ operation: z.literal("createConversation"), data: z.object({ conversation: ConversationSchema }).strict() }).strict(),
   z.object({ operation: z.literal("listMessages"), data: z.object({ messages: z.array(MessageSchema) }).strict() }).strict(),

@@ -49,6 +49,15 @@ describe("conversation routes", () => {
     expect(response.json()).toMatchObject({ conversation: { botId: bot.id, userId: "user_local" } });
   });
 
+  it("lists persisted conversations for the local user", async () => {
+    const conversation = await createConversation();
+
+    const response = await app.inject({ method: "GET", url: "/v1/conversations" });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({ conversations: [{ id: conversation.id, userId: "user_local" }] });
+  });
+
   it("returns the same not-found response for missing and foreign Bots", async () => {
     const foreignBot = await repositories.createBot({ userId: "user_other", name: "他人的 Bot", persona: "不可访问" });
 

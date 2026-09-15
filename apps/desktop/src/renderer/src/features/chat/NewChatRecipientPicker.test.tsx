@@ -31,4 +31,17 @@ describe("new chat recipient picker", () => {
 
     expect(await screen.findByRole("heading", { name: "新建 Bot" })).toBeTruthy();
   });
+
+  it("restores and reopens an existing conversation without creating another one", async () => {
+    const api = createFakeVorkApi();
+    await api.request({ operation: "createBot", input: { name: "已保存 Bot", persona: "已有对话" } });
+    api.request.mockClear();
+    const user = userEvent.setup();
+
+    render(<App api={api} />);
+    expect(await screen.findByRole("heading", { name: "已保存 Bot" })).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "已保存 Bot" }));
+
+    expect(api.request).not.toHaveBeenCalledWith({ operation: "createConversation", input: { botId: "bot_1" } });
+  });
 });

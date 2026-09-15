@@ -37,9 +37,14 @@ export const GetConversationInputSchema = z.object({
 
 export const ListMessagesInputSchema = GetConversationInputSchema;
 
+export const ListConversationsInputSchema = z.object({
+  userId: IdentifierSchema
+});
+
 export type Conversation = z.infer<typeof ConversationSchema>;
 export type Message = z.infer<typeof MessageSchema>;
 export type CreateConversationRepositoryInput = z.infer<typeof CreateConversationRepositoryInputSchema>;
 export type GetBotInput = z.infer<typeof GetBotInputSchema>;
 export type GetConversationInput = z.infer<typeof GetConversationInputSchema>;
 export type ListMessagesInput = z.infer<typeof ListMessagesInputSchema>;
+export type ListConversationsInput = z.infer<typeof ListConversationsInputSchema>;

@@ -10,7 +10,7 @@ describe("useConversation", () => {
     Reflect.deleteProperty(window, "vorkApi");
   });
 
-  it("merges ordered message deltas and resumes from the latest event sequence", async () => {
+  it("merges ordered message deltas without recreating a healthy subscription", async () => {
     const api = createFakeVorkApi();
     window.vorkApi = api;
     const { result, rerender } = renderHook(() => useConversation("conversation_1"));
@@ -31,6 +31,6 @@ describe("useConversation", () => {
 
     expect(result.current.messages.map((message) => message.content)).toEqual(["你好", "你好"]);
     rerender();
-    expect(api.subscribeCalls.at(-1)).toEqual({ taskId, afterSequence: 3 });
+    expect(api.subscribeCalls).toEqual([{ taskId, afterSequence: 0 }]);
   });
 });

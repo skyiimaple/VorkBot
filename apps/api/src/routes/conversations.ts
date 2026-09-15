@@ -9,11 +9,17 @@ const ConversationParamsSchema = z.object({ id: z.string().trim().min(1) });
 const CreateMessageInputSchema = z.object({ content: z.string().trim().min(1) });
 const CreateConversationResponseSchema = z.object({ conversation: ConversationSchema });
 const ListMessagesResponseSchema = z.object({ messages: z.array(MessageSchema) });
+const ListConversationsResponseSchema = z.object({ conversations: z.array(ConversationSchema) });
 const SubmitMessageResponseSchema = z.object({ message: MessageSchema, task: TaskSchema });
 const ErrorResponseSchema = z.object({ error: z.string().min(1) });
 
 export function registerConversationRoutes(app: FastifyInstance, dependencies: ApiDependencies): void {
   const chatService = new ChatService(dependencies.repositories, dependencies.queue);
+
+  app.get("/v1/conversations", async (request) => {
+    const conversations = await dependencies.repositories.listConversations(request.userId);
+    return ListConversationsResponseSchema.parse({ conversations });
+  });
 
   app.post("/v1/conversations", async (request, reply) => {
     const input = CreateConversationInputSchema.parse(request.body);
