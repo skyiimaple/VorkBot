@@ -2,10 +2,10 @@ import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { createRepositories } from "@vork/database";
 import { getTestDatabaseUrl, resetFoundationDatabase } from "@vork/test-support";
 import type { ComputerClientLike } from "./computer-client.js";
-import { runFileTask } from "./run-file-task.js";
+import { runBrowserTask } from "./run-browser-task.js";
 import type { TaskNotifier } from "./queue.js";
 
-describe("runFileTask", () => {
+describe("runBrowserTask", () => {
   const databaseUrl = getTestDatabaseUrl();
   const repos = createRepositories({ databaseUrl });
   const notifiedTaskIds: string[] = [];
@@ -22,15 +22,27 @@ describe("runFileTask", () => {
     await repos.close();
   });
 
-  it("writes and reads a demo file through the computer client", async () => {
-    const bot = await repos.createBot({ userId: "user_local", name: "File Bot", persona: "文件" });
+  it("navigates the demo page and performs click/type actions", async () => {
+    const bot = await repos.createBot({ userId: "user_local", name: "Browser Bot", persona: "浏览器" });
     const conversation = await repos.createConversation({ userId: "user_local", botId: bot.id });
     const queued = await repos.createQueuedMessageTask({
       userId: "user_local",
       botId: bot.id,
       conversationId: conversation.id,
-      content: "[file-demo]"
+      content: "[browser-demo]"
     });
+
+    const observed = {
+      pageId: "page_1",
+      url: "file:///app/public/test-page/index.html",
+      title: "Vork Browser Test",
+      loadState: "loaded" as const,
+      elements: [
+        { ref: "el_1", role: "button", name: "Click me", tag: "button" },
+        { ref: "el_2", tag: "input", name: "Type here" }
+      ],
+      consoleErrors: [] as string[]
+    };
 
     const computer: ComputerClientLike = {
       acquire: vi.fn(async () => ({
@@ -44,26 +56,15 @@ describe("runFileTask", () => {
         expiresAt: "2026-09-16T00:02:00.000Z"
       })),
       release: vi.fn(async () => {}),
-      writeFile: vi.fn(async () => ({ path: "notes/hello.txt", bytes: 36 })),
-      readFile: vi.fn(async () => ({
-        path: "notes/hello.txt",
-        content: "你好，来自云电脑文件工具。",
-        bytes: 36
-      })),
-      observe: vi.fn(async () => ({
-        pageId: "page_1",
-        url: "about:blank",
-        title: "",
-        loadState: "loaded" as const,
-        elements: [],
-        consoleErrors: []
-      })),
-      navigate: vi.fn(async () => ({ url: "about:blank" })),
+      writeFile: vi.fn(async () => ({ path: "notes/hello.txt", bytes: 1 })),
+      readFile: vi.fn(async () => ({ path: "notes/hello.txt", content: "x", bytes: 1 })),
+      observe: vi.fn(async () => observed),
+      navigate: vi.fn(async () => ({ url: observed.url })),
       click: vi.fn(async () => ({ ref: "el_1" })),
-      type: vi.fn(async () => ({ ref: "el_1" }))
+      type: vi.fn(async () => ({ ref: "el_2" }))
     };
 
-    await runFileTask(
+    await runBrowserTask(
       {
         taskId: queued.task.id,
         userId: queued.task.userId,
@@ -76,6 +77,10 @@ describe("runFileTask", () => {
 
     const task = await repos.getTask(queued.task.id);
     expect(task?.status).toBe("completed");
+    expect(computer.navigate).toHaveBeenCalledWith("lease_1", "file:///app/public/test-page/index.html");
+    expect(computer.click).toHaveBeenCalledWith("lease_1", "el_1");
+    expect(computer.type).toHaveBeenCalledWith("lease_1", "el_2", "hello from vork");
+
     const events = await repos.listTaskEvents(queued.task.id, 0);
     expect(events.map((event) => event.type)).toEqual([
       "task.queued",
@@ -85,10 +90,13 @@ describe("runFileTask", () => {
       "tool.finished",
       "tool.started",
       "tool.finished",
+      "tool.started",
+      "tool.finished",
+      "tool.started",
+      "tool.finished",
       "slot.released",
       "message.completed",
       "task.completed"
     ]);
-    expect(computer.release).toHaveBeenCalledWith("lease_1");
   });
 });

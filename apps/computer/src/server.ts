@@ -8,6 +8,8 @@ import { LeaseManager } from "./slots/lease-manager.js";
 import { BrowserService } from "./browser/service.js";
 import { BrowserSessionRegistry } from "./browser/session.js";
 import { registerBrowserRoutes } from "./browser/routes.js";
+import { ControlStateStore } from "./control/state.js";
+import { registerControlRoutes } from "./control/routes.js";
 import { registerSlotRoutes } from "./slots/routes.js";
 
 export type ComputerAppOptions = {
@@ -28,11 +30,17 @@ export function buildComputerApp(options: ComputerAppOptions): FastifyInstance {
   });
   const fileService = new FileService({ workspaceRoot, leaseManager });
   const browserSessions = new BrowserSessionRegistry(browserProfilesRoot);
-  const browserService = new BrowserService({ leaseManager, sessionRegistry: browserSessions });
+  const controlStore = new ControlStateStore();
+  const browserService = new BrowserService({
+    leaseManager,
+    sessionRegistry: browserSessions,
+    controlStore
+  });
 
   registerAuth(app, options.token);
   registerSlotRoutes(app, leaseManager, {
     onRelease: async ({ slotId, kind }) => {
+      controlStore.reset(slotId);
       if (kind === "browser") {
         await browserService.releaseSlot(slotId);
       }
@@ -40,6 +48,7 @@ export function buildComputerApp(options: ComputerAppOptions): FastifyInstance {
   });
   registerFileRoutes(app, fileService);
   registerBrowserRoutes(app, browserService);
+  registerControlRoutes(app, controlStore);
 
   app.get("/health", async () => ({ status: "ok" as const }));
 

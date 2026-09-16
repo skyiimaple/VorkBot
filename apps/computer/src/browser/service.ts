@@ -1,5 +1,15 @@
+import { ControlStateStore } from "../control/state.js";
 import { LeaseExpiredError, type LeaseManager } from "../slots/lease-manager.js";
 import { BrowserSessionRegistry, type ObserveResult } from "./session.js";
+
+export class HumanControlActiveError extends Error {
+  readonly code = "human_control_active" as const;
+
+  constructor() {
+    super("human_control_active");
+    this.name = "HumanControlActiveError";
+  }
+}
 
 export class BrowserKindError extends Error {
   readonly code = "invalid_slot_kind" as const;
@@ -31,15 +41,18 @@ export class BrowserUnavailableError extends Error {
 export type BrowserServiceOptions = {
   leaseManager: LeaseManager;
   sessionRegistry: BrowserSessionRegistry;
+  controlStore: ControlStateStore;
 };
 
 export class BrowserService {
   readonly #leaseManager: LeaseManager;
   readonly #sessions: BrowserSessionRegistry;
+  readonly #controlStore: ControlStateStore;
 
   constructor(options: BrowserServiceOptions) {
     this.#leaseManager = options.leaseManager;
     this.#sessions = options.sessionRegistry;
+    this.#controlStore = options.controlStore;
   }
 
   async observe(input: { leaseId: string }): Promise<ObserveResult> {
@@ -56,6 +69,8 @@ export class BrowserService {
   }
 
   async click(input: { leaseId: string; ref: string }): Promise<{ ref: string }> {
+    const lease = this.#assertBrowserLease(input.leaseId);
+    this.#assertAgentControl(lease.slotId);
     const session = await this.#sessionForLease(input.leaseId);
     await session.start();
     try {
@@ -70,6 +85,8 @@ export class BrowserService {
   }
 
   async type(input: { leaseId: string; ref: string; text: string }): Promise<{ ref: string }> {
+    const lease = this.#assertBrowserLease(input.leaseId);
+    this.#assertAgentControl(lease.slotId);
     const session = await this.#sessionForLease(input.leaseId);
     await session.start();
     try {
@@ -100,6 +117,12 @@ export class BrowserService {
     return this.#sessions.getOrCreate(lease.slotId);
   }
 
+  #assertAgentControl(slotId: string): void {
+    if (this.#controlStore.get(slotId) === "human_control") {
+      throw new HumanControlActiveError();
+    }
+  }
+
   #assertBrowserLease(leaseId: string) {
     const lease = this.#leaseManager.assertActive(leaseId);
     if (lease.kind !== "browser") {
@@ -111,11 +134,17 @@ export class BrowserService {
 
 export function isBrowserServiceError(
   error: unknown
-): error is LeaseExpiredError | BrowserKindError | StaleElementRefError | BrowserUnavailableError {
+): error is
+  | LeaseExpiredError
+  | BrowserKindError
+  | StaleElementRefError
+  | BrowserUnavailableError
+  | HumanControlActiveError {
   return (
     error instanceof LeaseExpiredError ||
     error instanceof BrowserKindError ||
     error instanceof StaleElementRefError ||
-    error instanceof BrowserUnavailableError
+    error instanceof BrowserUnavailableError ||
+    error instanceof HumanControlActiveError
   );
 }

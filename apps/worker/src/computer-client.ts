@@ -19,12 +19,35 @@ export type ComputerClientOptions = {
   fetch?: typeof fetch;
 };
 
+const ObserveResultSchema = z.object({
+  pageId: z.string(),
+  url: z.string(),
+  title: z.string(),
+  loadState: z.enum(["loading", "loaded", "unknown"]),
+  elements: z.array(
+    z.object({
+      ref: z.string(),
+      role: z.string().optional(),
+      name: z.string().optional(),
+      tag: z.string().optional(),
+      testId: z.string().optional()
+    })
+  ),
+  consoleErrors: z.array(z.string())
+});
+
+export type ObserveResult = z.infer<typeof ObserveResultSchema>;
+
 export interface ComputerClientLike {
   acquire(input: AcquireSlotInput): Promise<SlotLease>;
   heartbeat(leaseId: string): Promise<SlotLease>;
   release(leaseId: string): Promise<void>;
   writeFile(leaseId: string, path: string, content: string): Promise<{ path: string; bytes: number }>;
   readFile(leaseId: string, path: string): Promise<FileReadResult>;
+  observe(leaseId: string): Promise<ObserveResult>;
+  navigate(leaseId: string, url: string): Promise<{ url: string }>;
+  click(leaseId: string, ref: string): Promise<{ ref: string }>;
+  type(leaseId: string, ref: string, text: string): Promise<{ ref: string }>;
 }
 
 export class ComputerClientError extends Error {
@@ -98,6 +121,50 @@ export class ComputerClient implements ComputerClientLike {
       throw await this.toError(response);
     }
     return FileReadResultSchema.parse(await response.json());
+  }
+
+  async observe(leaseId: string): Promise<ObserveResult> {
+    const response = await this.request("/v1/browser/observe", {
+      method: "POST",
+      body: JSON.stringify({ leaseId })
+    });
+    if (!response.ok) {
+      throw await this.toError(response);
+    }
+    return ObserveResultSchema.parse(await response.json());
+  }
+
+  async navigate(leaseId: string, url: string): Promise<{ url: string }> {
+    const response = await this.request("/v1/browser/navigate", {
+      method: "POST",
+      body: JSON.stringify({ leaseId, url })
+    });
+    if (!response.ok) {
+      throw await this.toError(response);
+    }
+    return z.object({ url: z.string() }).parse(await response.json());
+  }
+
+  async click(leaseId: string, ref: string): Promise<{ ref: string }> {
+    const response = await this.request("/v1/browser/click", {
+      method: "POST",
+      body: JSON.stringify({ leaseId, ref })
+    });
+    if (!response.ok) {
+      throw await this.toError(response);
+    }
+    return z.object({ ref: z.string() }).parse(await response.json());
+  }
+
+  async type(leaseId: string, ref: string, text: string): Promise<{ ref: string }> {
+    const response = await this.request("/v1/browser/type", {
+      method: "POST",
+      body: JSON.stringify({ leaseId, ref, text })
+    });
+    if (!response.ok) {
+      throw await this.toError(response);
+    }
+    return z.object({ ref: z.string() }).parse(await response.json());
   }
 
   private async request(path: string, init: RequestInit): Promise<Response> {
