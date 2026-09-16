@@ -36,6 +36,19 @@ services:
       postgres:
         condition: service_healthy
 
+  computer:
+    build:
+      context: .
+      dockerfile: infra/docker/computer.Dockerfile
+    environment:
+      VORK_COMPUTER_TOKEN: ${VORK_COMPUTER_TOKEN:-vork_computer_dev_only}
+      VORK_MAX_SLOTS: "1"
+      PORT: "8080"
+      HOST: 0.0.0.0
+    volumes:
+      - workspace_data:/workspace
+      - browser_profiles:/browser-profiles
+
   api:
     build:
       context: .
@@ -46,9 +59,13 @@ services:
       REDIS_PORT: "6379"
       HOST: 0.0.0.0
       PORT: "3000"
+      VORK_COMPUTER_URL: http://computer:8080
+      VORK_COMPUTER_TOKEN: ${VORK_COMPUTER_TOKEN:-vork_computer_dev_only}
     ports:
       - "127.0.0.1:3000:3000"
     depends_on:
+      computer:
+        condition: service_started
       postgres:
         condition: service_healthy
       redis:
@@ -63,7 +80,11 @@ services:
     environment:
       DATABASE_URL: postgres://vork:${VORK_DB_PASSWORD:-vork_dev_only}@postgres:5432/vork
       REDIS_URL: redis://redis:6379
+      VORK_COMPUTER_URL: http://computer:8080
+      VORK_COMPUTER_TOKEN: ${VORK_COMPUTER_TOKEN:-vork_computer_dev_only}
     depends_on:
+      computer:
+        condition: service_started
       postgres:
         condition: service_healthy
       redis:
@@ -73,3 +94,5 @@ services:
 
 volumes:
   postgres_data:
+  workspace_data:
+  browser_profiles:
