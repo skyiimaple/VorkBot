@@ -10,6 +10,7 @@ import { BrowserSessionRegistry } from "./browser/session.js";
 import { registerBrowserRoutes } from "./browser/routes.js";
 import { ControlStateStore } from "./control/state.js";
 import { registerControlRoutes } from "./control/routes.js";
+import { registerFrameRoutes } from "./frame/routes.js";
 import { registerSlotRoutes } from "./slots/routes.js";
 
 export type ComputerAppOptions = {
@@ -49,6 +50,7 @@ export function buildComputerApp(options: ComputerAppOptions): FastifyInstance {
   registerFileRoutes(app, fileService);
   registerBrowserRoutes(app, browserService);
   registerControlRoutes(app, controlStore);
+  registerFrameRoutes(app, { leaseManager, sessions: browserSessions });
 
   app.get("/health", async () => ({ status: "ok" as const }));
 

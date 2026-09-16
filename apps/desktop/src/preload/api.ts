@@ -40,12 +40,28 @@ export const TaskSubscriptionSchema = z.object({
 
 export const TaskEventMessageSchema = z.object({ taskId: IdentifierSchema, event: TaskEventSchema }).strict();
 
+export const ComputerFrameRequestSchema = z
+  .object({
+    taskId: IdentifierSchema,
+    slotId: IdentifierSchema
+  })
+  .strict();
+
+export const ComputerFrameResponseSchema = z
+  .object({
+    base64: z.string().min(1)
+  })
+  .strict();
+
 export type ApiRequest = z.infer<typeof ApiRequestSchema>;
 export type ApiResponse = z.infer<typeof ApiResponseSchema>;
 export type TaskEventListener = (event: z.infer<typeof TaskEventSchema>) => void;
+export type ComputerFrameRequest = z.infer<typeof ComputerFrameRequestSchema>;
+export type ComputerFrameResponse = z.infer<typeof ComputerFrameResponseSchema>;
 
 type IpcRendererLike = {
   invoke(channel: "vork:request", input: ApiRequest): Promise<unknown>;
+  invoke(channel: "vork:computer-frame", input: ComputerFrameRequest): Promise<unknown>;
   on(channel: "vork:task-event", listener: (event: unknown, payload: unknown) => void): unknown;
   removeListener(channel: "vork:task-event", listener: (event: unknown, payload: unknown) => void): unknown;
   send(channel: "vork:subscribe-task" | "vork:unsubscribe-task", input: z.infer<typeof TaskSubscriptionSchema>): void;
@@ -54,6 +70,7 @@ type IpcRendererLike = {
 export type VorkApi = {
   request(input: ApiRequest): Promise<ApiResponse>;
   subscribeTask(taskId: string, afterSequence: number, listener: TaskEventListener): () => void;
+  getComputerFrame(taskId: string, slotId: string): Promise<ComputerFrameResponse>;
 };
 
 export function createVorkApi(ipcRenderer: IpcRendererLike): VorkApi {
@@ -76,6 +93,11 @@ export function createVorkApi(ipcRenderer: IpcRendererLike): VorkApi {
         ipcRenderer.removeListener("vork:task-event", onTaskEvent);
         ipcRenderer.send("vork:unsubscribe-task", subscription);
       };
+    },
+
+    async getComputerFrame(taskId, slotId) {
+      const input = ComputerFrameRequestSchema.parse({ taskId, slotId });
+      return ComputerFrameResponseSchema.parse(await ipcRenderer.invoke("vork:computer-frame", input));
     }
   };
 }

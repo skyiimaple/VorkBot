@@ -3,10 +3,14 @@ import { z } from "zod";
 import {
   ApiRequestSchema,
   ApiResponseSchema,
+  ComputerFrameRequestSchema,
+  ComputerFrameResponseSchema,
   TaskEventMessageSchema,
   TaskSubscriptionSchema,
   type ApiRequest,
-  type ApiResponse
+  type ApiResponse,
+  type ComputerFrameRequest,
+  type ComputerFrameResponse
 } from "../preload/api.js";
 
 const ApiBaseUrlSchema = z.enum(["http://127.0.0.1:3000", "http://localhost:3000"]);
@@ -27,6 +31,11 @@ export function registerApiIpc(ipcMain: IpcMain, fetchImplementation: Fetch = fe
   ipcMain.handle("vork:request", async (_event, rawInput: unknown) => {
     const input = ApiRequestSchema.parse(rawInput);
     return requestApi(apiBaseUrl, input, fetchImplementation);
+  });
+
+  ipcMain.handle("vork:computer-frame", async (_event, rawInput: unknown) => {
+    const input = ComputerFrameRequestSchema.parse(rawInput);
+    return requestComputerFrame(apiBaseUrl, input, fetchImplementation);
   });
 
   ipcMain.on("vork:subscribe-task", (event, rawInput: unknown) => {
@@ -58,6 +67,23 @@ async function requestApi(apiBaseUrl: string, request: ApiRequest, fetchImplemen
   });
   if (!response.ok) throw new Error(`Vork API request failed with ${response.status}`);
   return ApiResponseSchema.parse({ operation: request.operation, data: await response.json() });
+}
+
+async function requestComputerFrame(
+  apiBaseUrl: string,
+  request: ComputerFrameRequest,
+  fetchImplementation: Fetch
+): Promise<ComputerFrameResponse> {
+  const response = await fetchImplementation(
+    new URL(
+      `/v1/computer/slots/${encodeURIComponent(request.slotId)}/frame?taskId=${encodeURIComponent(request.taskId)}`,
+      apiBaseUrl
+    ),
+    { headers: { accept: "image/jpeg" } }
+  );
+  if (!response.ok) throw new Error(`Vork computer frame request failed with ${response.status}`);
+  const bytes = Buffer.from(await response.arrayBuffer());
+  return ComputerFrameResponseSchema.parse({ base64: bytes.toString("base64") });
 }
 
 function apiRequestDetails(request: ApiRequest): { path: string; method: "GET" | "POST"; body?: unknown } {

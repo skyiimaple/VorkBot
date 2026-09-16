@@ -148,6 +148,11 @@ export class BrowserSession {
     await page.mouse.wheel(0, deltaY);
   }
 
+  async captureFrame(): Promise<Buffer> {
+    const page = await this.#ensurePage();
+    return page.screenshot({ type: "jpeg", quality: 70 });
+  }
+
   async #ensurePage(): Promise<Page> {
     if (!this.#page) {
       await this.start();

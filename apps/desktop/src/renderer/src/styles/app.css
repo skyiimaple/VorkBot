@@ -18,8 +18,13 @@ button { cursor: pointer; }
 .recipient-picker input { padding: 13px; border: 1px solid #596273; border-radius: 10px; color: inherit; background: #181b22; }
 .recipient-picker [role="listbox"] { display: grid; gap: 6px; }
 .recipient-picker button { padding: 12px; border: 0; border-radius: 8px; text-align: left; color: inherit; background: #232833; }
-.conversation { display: grid; grid-template-rows: auto 1fr auto auto; min-height: calc(100vh - 84px); max-width: 840px; margin: 0 auto; }
+.conversation { display: grid; grid-template-rows: auto auto 1fr auto auto; min-height: calc(100vh - 84px); max-width: 840px; margin: 0 auto; }
 .conversation header { display: flex; align-items: center; justify-content: space-between; }
+.header-actions button { border: 1px solid #434b5b; border-radius: 8px; padding: 6px 12px; color: #edf0f5; background: #232833; }
+.header-actions button[aria-pressed="true"] { background: #304a7a; border-color: #4d6ea8; }
+.computer-panel { margin-top: 12px; padding: 12px; border: 1px solid #343a47; border-radius: 10px; background: #181b22; min-height: 180px; }
+.computer-panel img { display: block; width: 100%; max-height: 360px; object-fit: contain; background: #0d0f14; border-radius: 8px; }
+.computer-panel p { margin: 0; color: #adb5c4; font-size: 13px; }
 .messages { display: grid; align-content: start; gap: 14px; padding: 30px 0; }
 .message { max-width: 80%; padding: 4px 14px; border-radius: 12px; background: #222833; }
 .message.user { justify-self: end; background: #304a7a; }

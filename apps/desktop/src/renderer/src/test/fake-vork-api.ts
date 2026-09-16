@@ -59,6 +59,9 @@ export function createFakeVorkApi(): FakeVorkApi {
     request,
     createBot,
     subscribeCalls,
+    getComputerFrame: vi.fn(async () => ({
+      base64: Buffer.from([0xff, 0xd8, 0xff, 0xd9]).toString("base64")
+    })),
     subscribeTask(taskId, afterSequence, listener) {
       subscribeCalls.push({ taskId, afterSequence });
       const taskListeners = listeners.get(taskId) ?? new Set<TaskEventListener>();
