@@ -42,9 +42,12 @@ services:
       dockerfile: infra/docker/computer.Dockerfile
     environment:
       VORK_COMPUTER_TOKEN: ${VORK_COMPUTER_TOKEN:-vork_computer_dev_only}
-      VORK_MAX_SLOTS: "1"
+      VORK_MAX_SLOTS: "3"
+      VORK_MAX_BROWSER_SLOTS: "2"
       PORT: "8080"
       HOST: 0.0.0.0
+    mem_limit: 4g
+    cpus: 2
     volumes:
       - workspace_data:/workspace
       - browser_profiles:/browser-profiles

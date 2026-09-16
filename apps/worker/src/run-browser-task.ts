@@ -3,9 +3,11 @@ import {
   TOOL_EVENT_TYPES,
   type TaskJob
 } from "@vork/contracts";
+import type { Job } from "bullmq";
 import type { Repositories } from "@vork/database";
 import type { ComputerClientLike, ObserveResult } from "./computer-client.js";
 import type { TaskNotifier } from "./queue.js";
+import { retryOrFailSlotWait, toSlotWaitError } from "./slot-retry.js";
 
 const BROWSER_DEMO_MARKER = "[browser-demo]";
 const DEMO_TEST_PAGE_URL = "file:///app/public/test-page/index.html";
@@ -16,6 +18,7 @@ type RunBrowserTaskDependencies = {
   repos: Repositories;
   computer: ComputerClientLike;
   notifier: TaskNotifier;
+  job?: Job<TaskJob>;
 };
 
 const terminalStatuses = new Set(["completed", "failed", "cancelled"]);
@@ -42,17 +45,29 @@ function findElement(observed: ObserveResult, matcher: (element: ObserveResult["
 
 export async function runBrowserTask(rawJob: TaskJob, deps: RunBrowserTaskDependencies): Promise<void> {
   const task = await deps.repos.getTask(rawJob.taskId);
-  if (!task || terminalStatuses.has(task.status) || task.status === "running") return;
+  if (!task || terminalStatuses.has(task.status)) return;
 
   let leaseId: string | undefined;
   let heartbeatTimer: ReturnType<typeof setInterval> | undefined;
 
   try {
-    await deps.repos.appendTaskEvent({ taskId: task.id, type: "task.running", payload: {} });
-    await notify(deps.notifier, task.id);
+    let lease;
+    try {
+      lease = await deps.computer.acquire({ taskId: task.id, botId: task.botId, kind: "browser" });
+    } catch (error) {
+      const wait = toSlotWaitError(error);
+      if (wait && deps.job) {
+        await retryOrFailSlotWait(deps.job, task.id, wait.code, deps);
+      }
+      throw error;
+    }
 
-    const lease = await deps.computer.acquire({ taskId: task.id, botId: task.botId, kind: "browser" });
     leaseId = lease.leaseId;
+    if (task.status !== "running") {
+      await deps.repos.appendTaskEvent({ taskId: task.id, type: "task.running", payload: {} });
+      await notify(deps.notifier, task.id);
+    }
+
     await deps.repos.appendTaskEvent({
       taskId: task.id,
       type: SLOT_EVENT_TYPES.ACQUIRED,
@@ -140,7 +155,10 @@ export async function runBrowserTask(rawJob: TaskJob, deps: RunBrowserTaskDepend
       content: `浏览器演示完成：已打开测试页「${observed.title}」，点击按钮并在输入框输入「${DEMO_TYPE_TEXT}」。`
     });
     await notify(deps.notifier, task.id);
-  } catch {
+  } catch (error) {
+    if (error instanceof Error && (error.name === "DelayedError" || error.message === "slot_wait_exhausted")) {
+      throw error;
+    }
     const latestTask = await deps.repos.getTask(task.id);
     if (!latestTask || terminalStatuses.has(latestTask.status)) return;
     try {

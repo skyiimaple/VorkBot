@@ -25,7 +25,7 @@ export class RedisTaskNotifier implements TaskNotifier {
 export function createTaskWorker(deps: TaskWorkerDependencies, connection: ConnectionOptions): Worker<TaskJob, void, typeof TASK_JOB_NAME> {
   return new Worker<TaskJob, void, typeof TASK_JOB_NAME>(
     TASK_QUEUE_NAME,
-    async (job) => runTask(TaskJobSchema.parse(job.data), deps),
+    async (job) => runTask(TaskJobSchema.parse(job.data), deps, job),
     { connection }
   );
 }

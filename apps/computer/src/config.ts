@@ -3,7 +3,8 @@ import { z } from "zod";
 const ComputerConfigSchema = z.object({
   token: z.string().min(1),
   port: z.coerce.number().int().positive().default(8080),
-  maxSlots: z.coerce.number().int().positive().default(1),
+  maxSlots: z.coerce.number().int().positive().default(3),
+  maxBrowserSlots: z.coerce.number().int().positive().default(2),
   host: z.string().min(1).default("127.0.0.1")
 });
 
@@ -14,6 +15,7 @@ export function loadConfig(): ComputerConfig {
     token: process.env.VORK_COMPUTER_TOKEN,
     port: process.env.PORT,
     maxSlots: process.env.VORK_MAX_SLOTS,
+    maxBrowserSlots: process.env.VORK_MAX_BROWSER_SLOTS,
     host: process.env.HOST
   });
 }

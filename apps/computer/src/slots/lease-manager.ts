@@ -1,7 +1,9 @@
 import { randomUUID } from "node:crypto";
 import type { AcquireSlotInput, ComputerError, SlotLease } from "@vork/contracts";
+import type { MemoryPressureReader } from "../system/memory-pressure.js";
 
 const DEFAULT_TTL_MS = 60_000;
+const DEFAULT_MAX_BROWSER_SLOTS = 2;
 
 export class LeaseExpiredError extends Error {
   readonly code = "lease_expired" as const;
@@ -23,7 +25,9 @@ type LeaseRecord = {
 
 export type LeaseManagerOptions = {
   maxSlots: number;
+  maxBrowserSlots?: number;
   ttlMs?: number;
+  isMemoryPressure?: MemoryPressureReader;
 };
 
 function isComputerError(result: SlotLease | ComputerError | void): result is ComputerError {
@@ -32,17 +36,30 @@ function isComputerError(result: SlotLease | ComputerError | void): result is Co
 
 export class LeaseManager {
   readonly #maxSlots: number;
+  readonly #maxBrowserSlots: number;
   readonly #ttlMs: number;
+  readonly #isMemoryPressure: MemoryPressureReader;
   readonly #leases = new Map<string, LeaseRecord>();
   readonly #slotToLeaseId = new Map<string, string>();
 
   constructor(options: LeaseManagerOptions) {
     this.#maxSlots = options.maxSlots;
+    this.#maxBrowserSlots = options.maxBrowserSlots ?? DEFAULT_MAX_BROWSER_SLOTS;
     this.#ttlMs = options.ttlMs ?? DEFAULT_TTL_MS;
+    this.#isMemoryPressure = options.isMemoryPressure ?? (() => false);
   }
 
   acquire(input: AcquireSlotInput): SlotLease | ComputerError {
     this.#purgeExpiredSlots();
+
+    if (input.kind === "browser") {
+      if (this.#isMemoryPressure()) {
+        return { code: "memory_pressure" };
+      }
+      if (this.#activeBrowserCount() >= this.#maxBrowserSlots) {
+        return { code: "browser_concurrency_limit" };
+      }
+    }
 
     const slotId = this.#findAvailableSlot();
     if (!slotId) {
@@ -106,6 +123,17 @@ export class LeaseManager {
       taskId: record.taskId,
       kind: record.kind
     };
+  }
+
+  #activeBrowserCount(): number {
+    let count = 0;
+    for (const leaseId of this.#slotToLeaseId.values()) {
+      const record = this.#leases.get(leaseId);
+      if (record && !this.#isExpired(record) && record.kind === "browser") {
+        count += 1;
+      }
+    }
+    return count;
   }
 
   #findAvailableSlot(): string | undefined {

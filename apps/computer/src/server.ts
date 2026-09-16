@@ -12,13 +12,16 @@ import { ControlStateStore } from "./control/state.js";
 import { registerControlRoutes } from "./control/routes.js";
 import { registerFrameRoutes } from "./frame/routes.js";
 import { registerSlotRoutes } from "./slots/routes.js";
+import { createMemoryPressureReader } from "./system/memory-pressure.js";
 
 export type ComputerAppOptions = {
   token: string;
   maxSlots: number;
+  maxBrowserSlots?: number;
   workspaceRoot?: string;
   browserProfilesRoot?: string;
   leaseTtlMs?: number;
+  isMemoryPressure?: () => boolean;
 };
 
 export function buildComputerApp(options: ComputerAppOptions): FastifyInstance {
@@ -27,7 +30,9 @@ export function buildComputerApp(options: ComputerAppOptions): FastifyInstance {
   const browserProfilesRoot = options.browserProfilesRoot ?? "/browser-profiles";
   const leaseManager = new LeaseManager({
     maxSlots: options.maxSlots,
-    ttlMs: options.leaseTtlMs
+    maxBrowserSlots: options.maxBrowserSlots,
+    ttlMs: options.leaseTtlMs,
+    isMemoryPressure: options.isMemoryPressure
   });
   const fileService = new FileService({ workspaceRoot, leaseManager });
   const browserSessions = new BrowserSessionRegistry(browserProfilesRoot);
@@ -59,7 +64,12 @@ export function buildComputerApp(options: ComputerAppOptions): FastifyInstance {
 
 export async function start(): Promise<void> {
   const config = loadConfig();
-  const app = buildComputerApp({ token: config.token, maxSlots: config.maxSlots });
+  const app = buildComputerApp({
+    token: config.token,
+    maxSlots: config.maxSlots,
+    maxBrowserSlots: config.maxBrowserSlots,
+    isMemoryPressure: createMemoryPressureReader()
+  });
   await app.listen({ host: config.host, port: config.port });
 }
 

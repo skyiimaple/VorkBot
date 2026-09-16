@@ -1,4 +1,5 @@
 import type { TaskJob } from "@vork/contracts";
+import type { Job } from "bullmq";
 import type { Repositories } from "@vork/database";
 import type { ComputerClientLike } from "./computer-client.js";
 import type { ModelProvider } from "./model.js";
@@ -14,7 +15,11 @@ export type TaskWorkerDependencies = {
   computer?: ComputerClientLike;
 };
 
-export async function runTask(job: TaskJob, deps: TaskWorkerDependencies): Promise<void> {
+export async function runTask(
+  job: TaskJob,
+  deps: TaskWorkerDependencies,
+  queueJob?: Job<TaskJob>
+): Promise<void> {
   const task = await deps.repos.getTask(job.taskId);
   if (!task) return;
 
@@ -29,7 +34,7 @@ export async function runTask(job: TaskJob, deps: TaskWorkerDependencies): Promi
     if (!deps.computer) {
       throw new Error("File demo tasks require a configured computer client");
     }
-    await runFileTask(job, { repos: deps.repos, computer: deps.computer, notifier: deps.notifier });
+    await runFileTask(job, { repos: deps.repos, computer: deps.computer, notifier: deps.notifier, job: queueJob });
     return;
   }
 
@@ -37,7 +42,7 @@ export async function runTask(job: TaskJob, deps: TaskWorkerDependencies): Promi
     if (!deps.computer) {
       throw new Error("Browser demo tasks require a configured computer client");
     }
-    await runBrowserTask(job, { repos: deps.repos, computer: deps.computer, notifier: deps.notifier });
+    await runBrowserTask(job, { repos: deps.repos, computer: deps.computer, notifier: deps.notifier, job: queueJob });
     return;
   }
 
