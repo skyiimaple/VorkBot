@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <title>Vork Browser Test</title>
+  </head>
+  <body>
+    <h1>Vork Browser Test Page</h1>
+    <button id="action">Click me</button>
+    <input id="query" type="text" placeholder="Type here" />
+    <p id="status">idle</p>
+    <script>
+      document.getElementById("action").addEventListener("click", () => {
+        document.getElementById("status").textContent = "clicked";
+      });
+    </script>
+  </body>
+</html>

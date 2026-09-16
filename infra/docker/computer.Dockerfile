@@ -5,6 +5,8 @@ COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
 COPY apps/computer ./apps/computer
 COPY packages ./packages
 RUN pnpm install --filter @vork/computer... --frozen-lockfile --ignore-scripts
+RUN pnpm --filter @vork/computer exec playwright install chromium --with-deps
+COPY apps/computer/public ./public
 RUN chown -R node:node /app
 USER node
 EXPOSE 8080

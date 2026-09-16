@@ -13,6 +13,7 @@
   "dependencies": {
     "@vork/contracts": "workspace:*",
     "fastify": "^5.12.4",
+    "playwright": "^1.55.0",
     "zod": "^3.25.76"
   },
   "devDependencies": {

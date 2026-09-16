@@ -1,4 +1,4 @@
-import { AcquireSlotInputSchema } from "@vork/contracts";
+import { AcquireSlotInputSchema, type AcquireSlotInput } from "@vork/contracts";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { isComputerError, LeaseExpiredError, type LeaseManager } from "./lease-manager.js";
@@ -7,7 +7,15 @@ const LeaseIdBodySchema = z.object({
   leaseId: z.string().trim().min(1)
 });
 
-export function registerSlotRoutes(app: FastifyInstance, manager: LeaseManager): void {
+export type SlotRouteHooks = {
+  onRelease?: (released: { slotId: string; kind: AcquireSlotInput["kind"] }) => Promise<void> | void;
+};
+
+export function registerSlotRoutes(
+  app: FastifyInstance,
+  manager: LeaseManager,
+  hooks: SlotRouteHooks = {}
+): void {
   app.post("/v1/slots/acquire", async (request, reply) => {
     const parsed = AcquireSlotInputSchema.safeParse(request.body);
     if (!parsed.success) {
@@ -53,7 +61,10 @@ export function registerSlotRoutes(app: FastifyInstance, manager: LeaseManager):
       return reply.code(400).send({ code: "bad_request", message: parsed.error.message });
     }
 
-    manager.release(parsed.data.leaseId);
+    const released = manager.release(parsed.data.leaseId);
+    if (released) {
+      await hooks.onRelease?.({ slotId: released.slotId, kind: released.kind });
+    }
     return reply.code(204).send();
   });
 }

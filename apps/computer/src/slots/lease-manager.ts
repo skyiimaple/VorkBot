@@ -76,19 +76,25 @@ export class LeaseManager {
     return undefined;
   }
 
-  release(leaseId: string): void {
+  release(leaseId: string): SlotLease & { slotId: string; kind: LeaseRecord["kind"] } | undefined {
     const record = this.#leases.get(leaseId);
     if (!record) {
-      return;
+      return undefined;
     }
 
     this.#leases.delete(leaseId);
     if (this.#slotToLeaseId.get(record.slotId) === leaseId) {
       this.#slotToLeaseId.delete(record.slotId);
     }
+
+    return {
+      ...this.#toSlotLease(record),
+      slotId: record.slotId,
+      kind: record.kind
+    };
   }
 
-  assertActive(leaseId: string): SlotLease & { botId: string; taskId: string } {
+  assertActive(leaseId: string): SlotLease & { botId: string; taskId: string; kind: LeaseRecord["kind"] } {
     const record = this.#leases.get(leaseId);
     if (!record || this.#isExpired(record)) {
       throw new LeaseExpiredError();
@@ -97,7 +103,8 @@ export class LeaseManager {
     return {
       ...this.#toSlotLease(record),
       botId: record.botId,
-      taskId: record.taskId
+      taskId: record.taskId,
+      kind: record.kind
     };
   }
 
