@@ -34,8 +34,11 @@ export function registerApiIpc(ipcMain: IpcMain, fetchImplementation: Fetch = fe
     const key = subscriptionKey(event.sender.id, subscription.taskId);
     subscriptions.get(key)?.abort();
     const controller = new AbortController();
+    const abortOnDestroy = () => controller.abort();
+    event.sender.once("destroyed", abortOnDestroy);
     subscriptions.set(key, controller);
     void streamTaskEvents(apiBaseUrl, event.sender, subscription, controller, fetchImplementation, eventRetryDelayMs).finally(() => {
+      event.sender.removeListener("destroyed", abortOnDestroy);
       if (subscriptions.get(key) === controller) subscriptions.delete(key);
     });
   });
@@ -87,7 +90,7 @@ async function streamTaskEvents(
   retryDelayMs: number
 ): Promise<void> {
   let afterSequence = subscription.afterSequence;
-  while (!controller.signal.aborted) {
+  while (!controller.signal.aborted && !webContents.isDestroyed()) {
     try {
       const response = await fetchImplementation(
         new URL(`/v1/tasks/${encodeURIComponent(subscription.taskId)}/events?after=${afterSequence}`, apiBaseUrl),
@@ -97,7 +100,7 @@ async function streamTaskEvents(
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
-      while (!controller.signal.aborted) {
+      while (!controller.signal.aborted && !webContents.isDestroyed()) {
         const next = await reader.read();
         if (next.done) break;
         buffer += decoder.decode(next.value, { stream: true });
@@ -108,7 +111,7 @@ async function streamTaskEvents(
     } catch (error) {
       if (!controller.signal.aborted) console.error("Vork task event stream failed", error);
     }
-    if (!controller.signal.aborted) await delay(retryDelayMs);
+    if (!controller.signal.aborted && !webContents.isDestroyed()) await delay(retryDelayMs);
   }
 }
 
