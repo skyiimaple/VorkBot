@@ -1,7 +1,7 @@
 # Vork 阶段 2 设计：共享云电脑与执行槽
 
 **日期：** 2026-09-16  
-**状态：** 待用户审阅  
+**状态：** 歧义已收敛，待用户审阅  
 **仓库：** `/Users/maple/code/repo/VorkBot`  
 **依据：** `docs/superpowers/specs/2026-09-14-vork-system-design-zh-CN.md`、`docs/superpowers/plans/2026-09-14-vork-implementation-roadmap-zh-CN.md`  
 **前序：** 阶段 1 已交付 FakeModel 对话垂直切片（提交含 `273065a`）
@@ -75,21 +75,25 @@ API 网关
 - 新应用：`apps/computer`（HTTP 控制面）。
 - Compose 增加 `computer` 服务与工作区命名卷。
 - 容器非 root；禁止 `--privileged` 与 Docker Socket 挂载。
-- 认证：共享服务 token（环境变量）。无 token 或错误 token → `401`。后续可换 mTLS，本阶段不实现。
+- 认证：共享环境变量 `VORK_COMPUTER_TOKEN`（computer 校验、Worker/API 携带）。请求头 `Authorization: Bearer <token>`。缺失或错误 → `401`。mTLS 留阶段 4。
 
 **执行槽（本片 `maxSlots=1`，配置上限设计为 3）：**
 
-- `POST /v1/slots/acquire`：请求体 `{ taskId, botId, kind }`，`kind` 为 `file` | `browser` | `terminal`（`terminal` 本阶段可仅占位拒绝或未实现）。
+- `POST /v1/slots/acquire`：请求体 `{ taskId, botId, kind }`，`kind` 为 `file` | `browser` | `terminal`。
+- `kind=terminal`：本阶段**一律**返回 `501`，JSON 错误码 `not_implemented`；不分配槽位、不启动 PTY。PTY 不在阶段 2 范围内；若需要，在阶段 3 开始前另开一切片，本规格不展开。
 - 成功返回 `{ slotId, leaseId, expiresAt }`；无空闲槽返回 `503`，错误码 `no_slot`。
-- 心跳续租；`POST /v1/slots/release` 或租约过期后回收。
+- 租约 TTL **60s**；Worker 每 **15s** 调用 `POST /v1/slots/heartbeat` 续租；连续 **2 次**心跳失败视为租约丢失。
+- `POST /v1/slots/release` 或租约过期后回收；过期后 computer 拒绝该 `leaseId` 的一切工具调用（`409`，`lease_expired`）。
 - 槽位占用真相以 computer 内存状态为准；任务状态以 PostgreSQL 为准；每次 acquire/release/过期通过 Worker 追加任务事件对齐。
 
 **文件工具：**
 
-- 根路径：`/workspace/bots/{bot_id}/`；`/workspace/shared/` 本阶段只读或按白名单写入（默认只读，避免跨 Bot 污染）。
-- API（均需有效租约）：`list`、`stat`、`read`、`write`；可含 `mkdir`。
-- 强制路径规范化，拒绝 `..` 与绝对路径逃逸；单文件大小与单任务写入总量设上限；默认按 UTF-8 文本处理，二进制 read 用明确标志。
-- 工具事件类型（写入 `task_events`）：`tool.started`、`tool.finished`、`tool.failed`，payload 经 Zod 校验且不含完整大文件正文（可截断或存引用路径）。
+- 根路径：`/workspace/bots/{bot_id}/`（读写）；`/workspace/shared/` 本阶段**严格只读**，任何 write/mkdir → `403`，错误码 `read_only_root`。
+- API（均需有效租约，路径均相对 bot 根或 shared 根）：`list`、`stat`、`read`、`write`、`mkdir`（mkdir 仅允许在 bot 根下）。
+- 强制路径规范化，拒绝 `..` 与绝对路径逃逸。
+- 上限（本阶段固定值，可配置但默认如下）：单文件 **1 MiB**；单任务累计写入 **10 MiB**；`read` 返回正文同样受 1 MiB 限制，超出截断并在结果中标记 `truncated: true`。
+- 文本默认 UTF-8；二进制读需请求体或 query 显式 `encoding=base64`。
+- 工具事件类型（写入 `task_events`）：`tool.started`、`tool.finished`、`tool.failed`，payload 经 Zod 校验且不含完整大文件正文（只存路径、大小、截断标记）。
 
 **Worker 本片剧本：** acquire → 固定 `file.write` → `file.read` → 用户可见摘要消息 → `task.complete` → release。
 
@@ -123,9 +127,12 @@ API 网关
 
 **实时画面：**
 
-- 本阶段采用**短间隔截图 HTTP**（由 API 代理），不先上复杂直播协议。
+- 本阶段**不**使用 WebSocket/MJPEG；采用 **HTTP 轮询 JPEG 截图**。
+- computer 提供 `GET /v1/slots/{slotId}/frame?leaseId=...` → `image/jpeg`（最大宽 **1280px**，等比缩放）。
+- API 代理路径：`GET /v1/computer/slots/{slotId}/frame`（API 持 token 转发，响应同样为 JPEG）。
+- 桌面展开面板后 Renderer 经 preload 每 **500ms** 请求 API 代理路径；折叠面板时**停止**轮询。
 - 对话标题栏「电脑」入口展开面板；默认折叠。
-- Renderer 只经 preload/API 取画面，不持有 computer 地址或 token。
+- Renderer 不持有 computer 地址或 token。
 
 **人工接管状态机：**
 
@@ -143,8 +150,8 @@ agent_control → handoff_pending → human_control → agent_control
 
 - 集成：acquire → 打开测试页 → observe → 动作 → 有序事件。
 - 接管后输入类工具被拒；交还后可继续。
-- 桌面 E2E（加严项）：面板可见非空画面；接管状态可切换。
-- 单槽浏览器崩溃不拖垮 computer 进程，可槽内恢复或释放后重试。
+- 桌面 E2E（**推荐、非阻塞**：集成测试通过即可算切片 B 完成；E2E 失败不挡阶段 2，但应在 CI 或本地加严跑通）：面板可见非空 JPEG；接管状态可切换。
+- 单槽浏览器崩溃：见 §8.3「浏览器崩溃恢复」（槽内重启，不 release 租约）。
 
 ### 切片 C：三槽并发与资源限制
 
@@ -152,21 +159,23 @@ agent_control → handoff_pending → human_control → agent_control
 
 **调度：**
 
-- `acquire` 使用 `kind` 区分限额。
-- 可区分拒绝：`no_slot`、`browser_concurrency_limit`、`memory_pressure`；Worker 写入任务事件，任务保持 `queued` 或可重试等待。
-- **排队唤醒约定：** acquire 因上述可重试原因失败时，Worker **不**将任务标为失败，而是向 BullMQ 投入**延迟重试**（固定退避，带上限）；槽位释放不单独做第二套推送通道，避免双通道竞态。
-- 内存高水位：初始阈值 80%。测试可通过 computer 的显式「压力开关」或可注入的内存读数模拟，不必依赖打满宿主机。
+- `kind=file`：占用 1 个执行槽，不计入浏览器并发计数。
+- `kind=browser`：占用 1 个执行槽，且计入浏览器并发计数（上限 **2**）。
+- 可区分拒绝（HTTP `503`，JSON `code` 字段）：`no_slot`、`browser_concurrency_limit`、`memory_pressure`。
+- 上述三种拒绝时：任务状态保持 **`queued`**，追加 `slot.waiting` 事件（含 `reason`）；**不**标 `failed`。
+- **排队唤醒（唯一机制）：** Worker 对当前 BullMQ job 调用 BullMQ `moveToDelayed(Date.now() + 5000)`，**固定退避 5s**，**最多 60 次**（约 5 分钟）；超限后任务标 `failed`，事件 `slot.wait_exhausted`。槽位 release **不**触发 Redis pub/sub、不扫描队列、不唤醒其他 job，避免双通道竞态。
+- **内存高水位：** computer 读取**容器 cgroup 内存使用率**（非宿主机全局）；≥ **80%** 时拒绝新的 `kind=browser` acquire（`memory_pressure`）。自动化测试通过环境变量 `VORK_MEMORY_PRESSURE=1` 强制开启，不依赖打满真实内存。
 
-**资源限制：**
+**资源限制（本阶段落地范围）：**
 
-- Compose/cgroup 限制 CPU 与内存。
-- 工具预算子集：导航/命令超时、输出大小、单文件与写入总量；超限 → `tool.failed`。
-- 进程数与磁盘配额若本阶段无法可靠落地，记为阶段 4 待办，规格中不宣称已完成。
+- Compose：`computer` 服务 `mem_limit: 4g`、`cpus: 2`（本机开发默认；迁云时可按机器调整，比例思路不变）。
+- 工具超时：单次 `browser.navigate` **30s**；单次 `browser.click/type/scroll` **10s**；单次 `file.read/write` **5s**；超时 → `tool.failed`。
+- 单文件/单任务写入上限见 §3 切片 A（1 MiB / 10 MiB）。
+- **本阶段不落地、不宣称完成：** 进程数上限、磁盘配额 enforcement（记阶段 4 待办）。
 
 **崩溃与恢复：**
 
-- 单槽 Chromium 崩溃：只影响该槽；租约仍有效则可槽内重启浏览器，否则 release 并由任务事件记录失败或延迟重试（实现计划选定一种并测试锁定）。
-- computer 进程重启导致内存租约丢失：Worker 心跳/调用失败后按租约丢失处理，任务延迟重试或失败；工作区与 Profile 卷保留。
+- 见 §8.3、§8.4。
 
 **阶段 2 收尾验收：**
 
@@ -199,3 +208,66 @@ agent_control → handoff_pending → human_control → agent_control
 
 - **阶段 3：** 可配置模型供应商、受控 Agent 循环、预算与审批、记忆与 Skills；复用本阶段工具与租约接口。
 - **阶段 4：** 腾讯云部署、Caddy、备份、监控、Secret、签名公证；替换开发用 token 为更强认证（如 mTLS）。
+
+## 8. 固定参数与歧义收敛
+
+本节锁定前文「可二选一」表述，实施计划不得再留 TBD。
+
+### 8.1 环境变量（本阶段）
+
+| 变量 | 用途 |
+|------|------|
+| `VORK_COMPUTER_TOKEN` | Worker/API → computer 的 Bearer token |
+| `VORK_COMPUTER_URL` | Worker/API 访问 computer 的内网基址，如 `http://computer:8080` |
+| `VORK_MAX_SLOTS` | 默认 `1`（切片 A/B）；切片 C 改为 `3` |
+| `VORK_MAX_BROWSER_SLOTS` | 默认 `2`（切片 C 启用） |
+| `VORK_MEMORY_PRESSURE` | 测试用：`1` 强制 memory_pressure |
+| `VORK_MEMORY_HIGH_WATERMARK` | 默认 `0.8`（80%） |
+
+Compose 内 `computer` **不**向宿主机 `ports` 暴露；仅 `api`、`worker` 与 `computer` 同网络。
+
+### 8.2 任务类型 `kind` 语义
+
+| kind | 占执行槽 | 占浏览器并发名额 | 本阶段 |
+|------|----------|------------------|--------|
+| `file` | 是 | 否 | 实现 |
+| `browser` | 是 | 是 | 切片 B 起实现 |
+| `terminal` | — | — | 固定 `501 not_implemented` |
+
+### 8.3 浏览器崩溃恢复（唯一策略）
+
+1. Playwright/Chromium 进程退出且租约仍有效 → computer 在该槽**自动重启浏览器**（同一 Profile），最多 **3 次**，间隔 **2s**。
+2. 重启成功 → 追加 `browser.recovered` 事件，任务继续。
+3. 3 次均失败 → `POST /v1/slots/release`（若进程仍存活），任务标 **`failed`**，事件 `browser.crashed`；**不**使用 BullMQ 延迟重试（与「等槽位」不同，属于不可恢复故障）。
+4. computer 进程整体重启 → 所有内存租约丢失；Worker 下一次工具/心跳收到 `409 lease_expired` 或连接失败 → 任务标 **`failed`**，事件 `lease.lost`；用户需重新发起任务（本阶段不做自动从检查点续跑）。
+
+### 8.4 租约丢失与 computer 重启
+
+- Worker 侧：连续 2 次 heartbeat 失败或工具调用返回 `lease_expired` → 停止当前任务循环，release（best-effort），任务 **`failed`**。
+- 工作区卷与 Profile 卷**保留**；不自动重排队同一 taskId。
+
+### 8.5 画面与 API 代理
+
+- 唯一桌面取流路径：`Renderer → preload → API GET /v1/computer/slots/{slotId}/frame → computer GET /v1/slots/{slotId}/frame`。
+- 轮询间隔 **500ms**；面板关闭时零请求。
+- 截图格式 **JPEG**，最大宽度 **1280px**。
+
+### 8.6 新增任务事件（本阶段）
+
+| 事件 type | 含义 |
+|-----------|------|
+| `slot.acquired` | 成功占用槽位 |
+| `slot.released` | 正常释放 |
+| `slot.waiting` | acquire 被拒，任务仍 queued，含 `reason` |
+| `slot.wait_exhausted` | 延迟重试 60 次用尽 |
+| `browser.recovered` | 槽内浏览器崩溃后重启成功 |
+| `browser.crashed` | 浏览器重启 3 次失败，任务 failed |
+| `lease.lost` | 租约过期或 computer 重启导致丢失 |
+| `tool.started` / `tool.finished` / `tool.failed` | 工具生命周期（切片 A 起） |
+
+### 8.7 阶段 4 待办（本阶段不实现）
+
+- 进程数 cgroup 限制
+- 磁盘配额 enforcement
+- mTLS 替代 Bearer token
+- 公网暴露与 Caddy 终止 TLS
