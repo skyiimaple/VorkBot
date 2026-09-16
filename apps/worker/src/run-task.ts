@@ -1,0 +1,36 @@
+import type { TaskJob } from "@vork/contracts";
+import type { Repositories } from "@vork/database";
+import type { ComputerClientLike } from "./computer-client.js";
+import type { ModelProvider } from "./model.js";
+import type { TaskNotifier } from "./queue.js";
+import { runChatTask } from "./run-chat-task.js";
+import { isFileDemoMessage, runFileTask } from "./run-file-task.js";
+
+export type TaskWorkerDependencies = {
+  repos: Repositories;
+  model: ModelProvider;
+  notifier: TaskNotifier;
+  computer?: ComputerClientLike;
+};
+
+export async function runTask(job: TaskJob, deps: TaskWorkerDependencies): Promise<void> {
+  const task = await deps.repos.getTask(job.taskId);
+  if (!task) return;
+
+  const messages = await deps.repos.listMessages({ userId: task.userId, conversationId: task.conversationId });
+  const userMessage = messages.find((message) => message.id === task.messageId && message.authorType === "user");
+  if (!userMessage) {
+    await runChatTask(job, deps);
+    return;
+  }
+
+  if (isFileDemoMessage(userMessage.content)) {
+    if (!deps.computer) {
+      throw new Error("File demo tasks require a configured computer client");
+    }
+    await runFileTask(job, { repos: deps.repos, computer: deps.computer, notifier: deps.notifier });
+    return;
+  }
+
+  await runChatTask(job, deps);
+}
