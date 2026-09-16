@@ -48,6 +48,9 @@ importers:
 
   apps/computer:
     dependencies:
+      '@vork/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
       fastify:
         specifier: ^5.12.4
         version: 5.12.4

@@ -2,6 +2,8 @@ import { pathToFileURL } from "node:url";
 import Fastify, { type FastifyInstance } from "fastify";
 import { registerAuth } from "./auth.js";
 import { loadConfig } from "./config.js";
+import { LeaseManager } from "./slots/lease-manager.js";
+import { registerSlotRoutes } from "./slots/routes.js";
 
 export type ComputerAppOptions = {
   token: string;
@@ -10,7 +12,10 @@ export type ComputerAppOptions = {
 
 export function buildComputerApp(options: ComputerAppOptions): FastifyInstance {
   const app = Fastify();
+  const leaseManager = new LeaseManager({ maxSlots: options.maxSlots });
+
   registerAuth(app, options.token);
+  registerSlotRoutes(app, leaseManager);
 
   app.get("/health", async () => ({ status: "ok" as const }));
 

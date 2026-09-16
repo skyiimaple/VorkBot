@@ -10,6 +10,7 @@
     "lint": "tsc --noEmit"
   },
   "dependencies": {
+    "@vork/contracts": "workspace:*",
     "fastify": "^5.12.4",
     "zod": "^3.25.76"
   },
