@@ -6,3 +6,7 @@ out/
 coverage/
 *.log
 *.tsbuildinfo
+test-results/
+playwright-report/
+blob-report/
+playwright/.cache/

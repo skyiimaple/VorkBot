@@ -1,0 +1,75 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg17
+    environment:
+      POSTGRES_USER: vork
+      POSTGRES_PASSWORD: ${VORK_DB_PASSWORD:-vork_dev_only}
+      POSTGRES_DB: vork
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vork -d vork"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  redis:
+    image: valkey/valkey:8.1
+    ports:
+      - "127.0.0.1:6379:6379"
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  migrate:
+    build:
+      context: .
+      dockerfile: infra/docker/api.Dockerfile
+    command: ["pnpm", "--filter", "@vork/database", "db:migrate"]
+    environment:
+      DATABASE_URL: postgres://vork:${VORK_DB_PASSWORD:-vork_dev_only}@postgres:5432/vork
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  api:
+    build:
+      context: .
+      dockerfile: infra/docker/api.Dockerfile
+    environment:
+      DATABASE_URL: postgres://vork:${VORK_DB_PASSWORD:-vork_dev_only}@postgres:5432/vork
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      HOST: 0.0.0.0
+      PORT: "3000"
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+  worker:
+    build:
+      context: .
+      dockerfile: infra/docker/worker.Dockerfile
+    environment:
+      DATABASE_URL: postgres://vork:${VORK_DB_PASSWORD:-vork_dev_only}@postgres:5432/vork
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+volumes:
+  postgres_data:

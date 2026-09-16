@@ -7,7 +7,7 @@ export function buildWindowOptions(): BrowserWindowConstructorOptions {
     height: 800,
     show: false,
     webPreferences: {
-      preload: join(__dirname, "../preload/index.mjs"),
+      preload: join(__dirname, "../preload/index.cjs"),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true

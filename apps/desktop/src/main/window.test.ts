@@ -22,7 +22,7 @@ describe("createMainWindow", () => {
   it("creates an isolated renderer without Node integration", () => {
     const options = buildWindowOptions();
 
-    expect(options.webPreferences?.preload).toMatch(/preload\/index\.mjs$/);
+    expect(options.webPreferences?.preload).toMatch(/preload\/index\.cjs$/);
     expect(options.webPreferences?.contextIsolation).toBe(true);
     expect(options.webPreferences?.nodeIntegration).toBe(false);
     expect(options.webPreferences?.sandbox).toBe(true);

@@ -7,8 +7,10 @@
     "node": ">=22"
   },
   "scripts": {
-    "dev": "pnpm --parallel --if-present run dev",
-    "test": "pnpm -r test",
+    "dev": "pnpm --filter @vork/desktop dev",
+    "test": "pnpm -r --filter '!@vork/e2e' test",
+    "e2e": "pnpm --filter @vork/e2e test",
+    "healthcheck": "node scripts/dev-healthcheck.mjs",
     "typecheck": "pnpm -r typecheck",
     "lint": "pnpm -r lint"
   },

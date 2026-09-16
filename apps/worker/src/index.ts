@@ -2,6 +2,7 @@ import Redis from "ioredis";
 import { createRepositories } from "@vork/database";
 import { z } from "zod";
 import { FakeModel } from "./fake-model.js";
+import { startWorkerHeartbeat } from "./heartbeat.js";
 import { createTaskWorker, RedisTaskNotifier } from "./queue.js";
 
 const WorkerConfigSchema = z.object({
@@ -21,8 +22,11 @@ export async function start(): Promise<void> {
     { repos, model: new FakeModel(["你好，", "我是 Vork。"]), notifier: new RedisTaskNotifier(publisherRedis) },
     workerRedis
   );
+  await worker.waitUntilReady();
+  const stopHeartbeat = await startWorkerHeartbeat(publisherRedis);
 
   const shutdown = async () => {
+    await stopHeartbeat();
     await worker.close();
     await Promise.all([workerRedis.quit(), publisherRedis.quit(), repos.close()]);
   };
