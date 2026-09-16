@@ -88,13 +88,17 @@ export class LeaseManager {
     }
   }
 
-  assertActive(leaseId: string): SlotLease {
+  assertActive(leaseId: string): SlotLease & { botId: string; taskId: string } {
     const record = this.#leases.get(leaseId);
     if (!record || this.#isExpired(record)) {
       throw new LeaseExpiredError();
     }
 
-    return this.#toSlotLease(record);
+    return {
+      ...this.#toSlotLease(record),
+      botId: record.botId,
+      taskId: record.taskId
+    };
   }
 
   #findAvailableSlot(): string | undefined {
