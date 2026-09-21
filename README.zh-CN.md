@@ -1,6 +1,6 @@
 # Vork 本地开发版
 
-这是单用户的本地开发版：可通过 Electron 创建 Bot、聊天并查看确定性 FakeModel 的流式回复。阶段 2 已接入云电脑（Compose 内独立 `computer` 服务）：文件工具、浏览器工具、JPEG 画面面板、人工接管状态机，以及三槽并发与浏览器限额。终端与真实 AI 尚未接入。不要将此 Compose 配置直接暴露到公网。
+这是单用户的本地开发版：可通过 Electron 创建 Bot、聊天；默认用确定性 FakeModel 流式回复，配置 `LLM_API_KEY` 后 Worker 走 OpenAI-compatible 真实模型（如 DeepSeek）。阶段 2 已接入云电脑（Compose 内独立 `computer` 服务）：文件工具、浏览器工具、JPEG 画面面板、人工接管状态机，以及三槽并发与浏览器限额。终端尚未接入。不要将此 Compose 配置直接暴露到公网。
 
 ## 环境与启动
 
@@ -9,8 +9,12 @@
 ```sh
 docker compose up -d --build
 pnpm healthcheck
+pnpm smoke              # 可选：health → 建 Bot → 发「你好」→ 等助手回复
+pnpm smoke -- --file-demo   # 可选：再验 [file-demo]
 pnpm dev
 ```
+
+更完整的服务端口、冒烟步骤、退出码与真/假边界见 [`docs/handovers/2026-09-20-vork-local-stack-zh-CN.md`](docs/handovers/2026-09-20-vork-local-stack-zh-CN.md)。
 
 Compose 依次启动 PostgreSQL、Valkey、数据库迁移、Computer、API 和 Worker；API 只监听本机 `127.0.0.1:3000`，Computer 仅在 Compose 内网可达（`http://computer:8080`）。Electron 使用本机 API，客户端关闭后 Worker 仍在容器里运行。数据库、工作区与浏览器 Profile 存放在 Docker 命名卷中。Computer 默认 `VORK_MAX_SLOTS=3`、浏览器并发上限 2，并配置 `mem_limit: 4g` / `cpus: 2`。
 
@@ -23,6 +27,18 @@ Compose 依次启动 PostgreSQL、Valkey、数据库迁移、Computer、API 和 
 
 Computer 不映射宿主机端口，仅由 Worker/API 通过内网调用；桌面不持有 Computer 地址或 token。
 
+### 真实模型（阶段 3 最小切片）
+
+在 `.env`（已 gitignore）填写：
+
+```sh
+LLM_API_KEY=sk-...          # 空则回退 FakeModel
+LLM_BASE_URL=https://api.deepseek.com
+LLM_MODEL=deepseek-v4-flash
+```
+
+`LLM_BASE_URL` 可不带 `/v1`（Worker 会自动补全）。改完后重建/重启 Worker：`docker compose up -d --build worker`。桌面发消息即可；或 `pnpm smoke`（已不校验 FakeModel 固定文案）。`[file-demo]` / `[browser-demo]` 仍走 Computer 固定剧本，不经 LLM。
+
 ## 测试与排查
 
 ```sh
@@ -34,7 +50,7 @@ pnpm e2e
 docker compose logs api worker computer migrate
 ```
 
-`pnpm e2e` 需要 Compose 服务已就绪，并使用构建后的 Electron 入口。基础用例覆盖创建 Bot 与流式回复；`browser-demo` E2E 为推荐加严项（失败不挡阶段 2）。`pnpm healthcheck` 检查 API、数据库、Valkey、Worker 心跳与 Computer 健康状态。测试数据库使用单独的 `TEST_DATABASE_URL`，不要指向包含个人数据的数据库。本地跑浏览器集成测试需先安装 Playwright Chromium：`pnpm --filter @vork/computer exec playwright install chromium`。
+`pnpm e2e` 需要 Compose 服务已就绪，并使用构建后的 Electron 入口。基础用例覆盖创建 Bot 与流式回复；`browser-demo` E2E 为推荐加严项（失败不挡阶段 2）。`pnpm healthcheck` 检查 API、数据库、Valkey、Worker 心跳与 Computer 健康状态。`pnpm smoke`（`scripts/dev-smoke.mjs`）用 HTTP 走一遍 health → 创建 Bot → 发消息 → 轮询至非空 assistant 回复（兼容 FakeModel / 真模型）；加 `--file-demo` / `--sse` / `--timeout=<ms>` 可加严。测试数据库使用单独的 `TEST_DATABASE_URL`，不要指向包含个人数据的数据库。本地跑浏览器集成测试需先安装 Playwright Chromium：`pnpm --filter @vork/computer exec playwright install chromium`。
 
 ## 停止与数据
 
