@@ -104,8 +104,23 @@ function apiRequestDetails(request: ApiRequest): { path: string; method: "GET" |
         method: "POST",
         body: { content: request.input.content }
       };
+    case "cancelTask":
+      return {
+        path: `/v1/tasks/${encodeURIComponent(request.input.taskId)}/cancel`,
+        method: "POST"
+      };
+    case "listTasks":
+      return { path: "/v1/tasks", method: "GET" };
+    case "listSkills":
+      return { path: "/v1/skills", method: "GET" };
+    case "listFiles":
+      return { path: "/v1/files", method: "GET" };
+    case "listCredentials":
+      return { path: "/v1/credentials", method: "GET" };
   }
 }
+
+const TERMINAL_TASK_EVENT_TYPES = new Set(["task.completed", "task.failed", "task.cancelled"]);
 
 async function streamTaskEvents(
   apiBaseUrl: string,
@@ -116,7 +131,8 @@ async function streamTaskEvents(
   retryDelayMs: number
 ): Promise<void> {
   let afterSequence = subscription.afterSequence;
-  while (!controller.signal.aborted && !webContents.isDestroyed()) {
+  let reachedTerminal = false;
+  while (!controller.signal.aborted && !webContents.isDestroyed() && !reachedTerminal) {
     try {
       const response = await fetchImplementation(
         new URL(`/v1/tasks/${encodeURIComponent(subscription.taskId)}/events?after=${afterSequence}`, apiBaseUrl),
@@ -126,36 +142,51 @@ async function streamTaskEvents(
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
-      while (!controller.signal.aborted && !webContents.isDestroyed()) {
+      while (!controller.signal.aborted && !webContents.isDestroyed() && !reachedTerminal) {
         const next = await reader.read();
         if (next.done) break;
         buffer += decoder.decode(next.value, { stream: true });
         const frames = buffer.split("\n\n");
         buffer = frames.pop() ?? "";
-        for (const frame of frames) afterSequence = Math.max(afterSequence, sendTaskEvent(webContents, subscription.taskId, frame));
+        for (const frame of frames) {
+          const delivered = sendTaskEvent(webContents, subscription.taskId, frame);
+          if (delivered.sequence > 0) afterSequence = Math.max(afterSequence, delivered.sequence);
+          if (delivered.terminal) {
+            reachedTerminal = true;
+            controller.abort();
+            break;
+          }
+        }
       }
     } catch (error) {
       if (!controller.signal.aborted) console.error("Vork task event stream failed", error);
     }
-    if (!controller.signal.aborted && !webContents.isDestroyed()) await delay(retryDelayMs);
+    if (!reachedTerminal && !controller.signal.aborted && !webContents.isDestroyed()) await delay(retryDelayMs);
   }
 }
 
-function sendTaskEvent(webContents: WebContents, taskId: string, frame: string): number {
+function sendTaskEvent(
+  webContents: WebContents,
+  taskId: string,
+  frame: string
+): { sequence: number; terminal: boolean } {
   const data = frame
     .split("\n")
     .filter((line) => line.startsWith("data:"))
     .map((line) => line.slice(5).trim())
     .join("\n");
-  if (!data) return 0;
+  if (!data) return { sequence: 0, terminal: false };
   try {
     const payload = TaskEventMessageSchema.parse({ taskId, event: JSON.parse(data) });
     if (!webContents.isDestroyed()) webContents.send("vork:task-event", payload);
-    return payload.event.sequence;
+    return {
+      sequence: payload.event.sequence,
+      terminal: TERMINAL_TASK_EVENT_TYPES.has(payload.event.type)
+    };
   } catch {
     // Treat malformed SSE data as untrusted and do not expose it to the renderer.
   }
-  return 0;
+  return { sequence: 0, terminal: false };
 }
 
 function delay(milliseconds: number): Promise<void> {

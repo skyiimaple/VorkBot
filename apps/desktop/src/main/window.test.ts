@@ -28,6 +28,17 @@ describe("createMainWindow", () => {
     expect(options.webPreferences?.sandbox).toBe(true);
   });
 
+  it("uses macOS hiddenInset title bar with Grok traffic-light position", () => {
+    const options = buildWindowOptions();
+    if (process.platform === "darwin") {
+      expect(options.titleBarStyle).toBe("hiddenInset");
+      expect(options.trafficLightPosition).toEqual({ x: 16, y: 15 });
+      expect(options.backgroundColor).toBe("#fcfcfc");
+    } else {
+      expect(options.titleBarStyle).toBeUndefined();
+      expect(options.trafficLightPosition).toBeUndefined();
+    }
+  });
   it("blocks renderer navigation and only delegates secure external links", () => {
     const contents = new EventEmitter() as EventEmitter & {
       setWindowOpenHandler: ReturnType<typeof vi.fn>;

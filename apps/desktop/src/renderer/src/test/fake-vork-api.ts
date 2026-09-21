@@ -52,6 +52,84 @@ export function createFakeVorkApi(): FakeVorkApi {
         messages.set(input.input.conversationId, [...(messages.get(input.input.conversationId) ?? []), message]);
         return { operation: "submitMessage", data: { message, task } };
       }
+      case "cancelTask": {
+        const task: Task = {
+          id: input.input.taskId,
+          userId: "user_local",
+          botId: "bot_1",
+          conversationId: "conversation_1",
+          messageId: "message_1",
+          status: "cancelled",
+          createdAt: now,
+          updatedAt: now
+        };
+        return { operation: "cancelTask", data: { task } };
+      }
+      case "listTasks":
+        return { operation: "listTasks", data: { tasks: [] } };
+      case "listSkills":
+        return {
+          operation: "listSkills",
+          data: {
+            source: "stub",
+            skills: [
+              {
+                id: "skill_stub_browser",
+                name: "打开受控演示页",
+                kind: "browser",
+                kindLabel: "浏览器",
+                status: "draft",
+                statusLabel: "草稿",
+                summary: "在受控浏览器中打开演示页并截图。",
+                updatedAt: now
+              }
+            ]
+          }
+        };
+      case "listFiles":
+        return {
+          operation: "listFiles",
+          data: {
+            source: "stub",
+            files: [
+              {
+                id: "file_stub_notes",
+                name: "notes.md",
+                path: "notes.md",
+                kind: "file",
+                kindLabel: "文档",
+                badgeLabel: "示例"
+              }
+            ]
+          }
+        };
+      case "listCredentials":
+        return {
+          operation: "listCredentials",
+          data: {
+            source: "stub",
+            currentMode: {
+              id: "mode_fake",
+              label: "当前模式",
+              description: "使用确定性 FakeModel，无需密钥。阶段 3 才会接入真实供应商。"
+            },
+            credentials: [
+              {
+                id: "credential_fake_model",
+                provider: "FakeModel",
+                label: "FakeModel（内置）",
+                status: "enabled",
+                statusLabel: "启用",
+                mode: "builtin",
+                modeLabel: "本地",
+                configured: true,
+                summary: "确定性假模型，始终可用，无需密钥。"
+              }
+            ]
+          }
+        };
+      default:
+        throw new Error(`unsupported operation: ${(input as { operation: string }).operation}`);
     }
   });
 

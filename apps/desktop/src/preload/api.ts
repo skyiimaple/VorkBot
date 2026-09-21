@@ -2,6 +2,10 @@ import {
   BotSchema,
   ConversationSchema,
   CreateBotInputSchema,
+  ListModelCredentialsResponseSchema,
+  ListSkillsResponseSchema,
+  ListTasksResponseSchema,
+  ListWorkspaceFilesResponseSchema,
   MessageSchema,
   TaskEventSchema,
   TaskSchema
@@ -21,7 +25,12 @@ export const ApiRequestSchema = z.discriminatedUnion("operation", [
       operation: z.literal("submitMessage"),
       input: z.object({ conversationId: IdentifierSchema, content: z.string().trim().min(1) }).strict()
     })
-    .strict()
+    .strict(),
+  z.object({ operation: z.literal("cancelTask"), input: z.object({ taskId: IdentifierSchema }).strict() }).strict(),
+  z.object({ operation: z.literal("listTasks"), input: z.object({}).strict() }).strict(),
+  z.object({ operation: z.literal("listSkills"), input: z.object({}).strict() }).strict(),
+  z.object({ operation: z.literal("listFiles"), input: z.object({}).strict() }).strict(),
+  z.object({ operation: z.literal("listCredentials"), input: z.object({}).strict() }).strict()
 ]);
 
 export const ApiResponseSchema = z.discriminatedUnion("operation", [
@@ -30,7 +39,12 @@ export const ApiResponseSchema = z.discriminatedUnion("operation", [
   z.object({ operation: z.literal("createBot"), data: z.object({ bot: BotSchema, conversation: ConversationSchema }).strict() }).strict(),
   z.object({ operation: z.literal("createConversation"), data: z.object({ conversation: ConversationSchema }).strict() }).strict(),
   z.object({ operation: z.literal("listMessages"), data: z.object({ messages: z.array(MessageSchema) }).strict() }).strict(),
-  z.object({ operation: z.literal("submitMessage"), data: z.object({ message: MessageSchema, task: TaskSchema }).strict() }).strict()
+  z.object({ operation: z.literal("submitMessage"), data: z.object({ message: MessageSchema, task: TaskSchema }).strict() }).strict(),
+  z.object({ operation: z.literal("cancelTask"), data: z.object({ task: TaskSchema }).strict() }).strict(),
+  z.object({ operation: z.literal("listTasks"), data: ListTasksResponseSchema }).strict(),
+  z.object({ operation: z.literal("listSkills"), data: ListSkillsResponseSchema }).strict(),
+  z.object({ operation: z.literal("listFiles"), data: ListWorkspaceFilesResponseSchema }).strict(),
+  z.object({ operation: z.literal("listCredentials"), data: ListModelCredentialsResponseSchema }).strict()
 ]);
 
 export const TaskSubscriptionSchema = z.object({

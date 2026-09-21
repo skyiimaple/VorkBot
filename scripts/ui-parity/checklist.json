@@ -1,0 +1,421 @@
+{
+  "meta": {
+    "name": "Grok ↔ Vork UI/操作一致性",
+    "grokAsarDefault": "/Applications/Grok Bot.app/Contents/Resources/app.asar",
+    "grokExtractDefault": "/tmp/grok-bot-asar",
+    "vorkDesktopSrc": "apps/desktop/src/renderer/src",
+    "notes": [
+      "静态核对：对照 Grok asar 解包产物与 Vork desktop 源码。",
+      "runtime/manual：需肉眼或 Electron 冒烟，脚本只标记为需人工项。"
+    ]
+  },
+  "checks": [
+    {
+      "id": "token.accent",
+      "category": "tokens",
+      "title": "强调色 #599CE7",
+      "severity": "fail",
+      "grok": { "includes": ["--cursor-accent:#599CE7"] },
+      "vork": {
+        "files": ["styles/app.css"],
+        "includesAny": ["#599ce7", "#599CE7"]
+      }
+    },
+    {
+      "id": "token.sand-bg-base",
+      "category": "tokens",
+      "title": "Sand 背景 base #fcfcfc",
+      "severity": "fail",
+      "grok": { "includes": ["--sand-bg-base:#fcfcfc"] },
+      "vork": {
+        "files": ["styles/app.css"],
+        "includes": ["--sand-bg-base: #fcfcfc"]
+      }
+    },
+    {
+      "id": "token.sand-bg-subtle",
+      "category": "tokens",
+      "title": "Sand 背景 subtle #f7f7f7",
+      "severity": "fail",
+      "grok": { "includes": ["--sand-bg-subtle:#f7f7f7"] },
+      "vork": {
+        "files": ["styles/app.css"],
+        "includes": ["--sand-bg-subtle: #f7f7f7"]
+      }
+    },
+    {
+      "id": "token.sand-text-primary",
+      "category": "tokens",
+      "title": "Sand 主文字 #141414",
+      "severity": "fail",
+      "grok": { "includes": ["--sand-text-primary:#141414"] },
+      "vork": {
+        "files": ["styles/app.css"],
+        "includes": ["--sand-text-primary: #141414"]
+      }
+    },
+    {
+      "id": "token.sand-border-default",
+      "category": "tokens",
+      "title": "Sand 边框 / 滚动条 #14141426",
+      "severity": "fail",
+      "grok": { "includes": ["#14141426"] },
+      "vork": {
+        "files": ["styles/app.css"],
+        "includesAll": ["--sand-border-default: #14141426", "--sand-scrollbar: #14141426"]
+      }
+    },
+    {
+      "id": "token.sidebar-width",
+      "category": "tokens",
+      "title": "侧栏宽度 280px",
+      "severity": "fail",
+      "grok": { "includes": ["width:280px"] },
+      "vork": {
+        "files": ["styles/app.css", "layouts/AppShell.tsx"],
+        "includesAny": ["--sand-sidebar-width: 280px", "var(--sand-sidebar-width)"]
+      }
+    },
+    {
+      "id": "token.scrollbar-6px",
+      "category": "tokens",
+      "title": "滚动条 6px + thin + 透明轨道",
+      "severity": "fail",
+      "grok": { "includes": ["--scrollbar-size:6px"] },
+      "vork": {
+        "files": ["styles/app.css"],
+        "includesAll": [
+          "@utility scrollbar-grok",
+          "width: 6px",
+          "scrollbar-width: thin",
+          "background-color: transparent"
+        ]
+      }
+    },
+    {
+      "id": "token.bubble-agent",
+      "category": "tokens",
+      "title": "助手气泡 #eeeeee",
+      "severity": "fail",
+      "grok": { "includes": ["#eeeeee"] },
+      "vork": {
+        "files": ["styles/app.css"],
+        "includes": ["--sand-fill-bubble-agent: #eeeeee"]
+      }
+    },
+    {
+      "id": "sidebar.ungrouped-label",
+      "category": "sidebar",
+      "title": "默认分区名「未分组」",
+      "severity": "fail",
+      "grok": { "includes": ["未分组"] },
+      "vork": {
+        "files": ["features/navigation/Sidebar.tsx"],
+        "includes": ["未分组"]
+      }
+    },
+    {
+      "id": "sidebar.ungrouped-collapse",
+      "category": "sidebar",
+      "title": "未分组可折叠（store + UI）",
+      "severity": "fail",
+      "grok": null,
+      "vork": {
+        "files": ["features/navigation/Sidebar.tsx", "stores/ui-store.ts"],
+        "includesAll": [
+          "toggleUngroupedCollapsed",
+          "ungroupedCollapsed",
+          "未分组"
+        ]
+      }
+    },
+    {
+      "id": "sidebar.section-collapse",
+      "category": "sidebar",
+      "title": "自定义分组可折叠",
+      "severity": "fail",
+      "grok": null,
+      "vork": {
+        "files": ["features/navigation/Sidebar.tsx", "stores/ui-store.ts"],
+        "includesAll": ["toggleSectionCollapsed", "section.collapsed"]
+      }
+    },
+    {
+      "id": "sidebar.menu.rename-bot",
+      "category": "sidebar",
+      "title": "右键：重命名 Bot",
+      "severity": "fail",
+      "grok": { "includes": ["重命名 Bot"] },
+      "vork": {
+        "files": ["features/navigation/Sidebar.tsx"],
+        "includes": ["重命名 Bot"]
+      }
+    },
+    {
+      "id": "sidebar.menu.pin",
+      "category": "sidebar",
+      "title": "右键：置顶 / 取消置顶",
+      "severity": "fail",
+      "grok": { "includesAll": ["置顶", "取消置顶"] },
+      "vork": {
+        "files": ["features/navigation/Sidebar.tsx"],
+        "includesAll": ["置顶", "取消置顶"]
+      }
+    },
+    {
+      "id": "sidebar.menu.mute",
+      "category": "sidebar",
+      "title": "右键：静音 / 取消静音",
+      "severity": "fail",
+      "grok": { "includesAll": ["静音", "取消静音"] },
+      "vork": {
+        "files": ["features/navigation/Sidebar.tsx"],
+        "includesAll": ["静音", "取消静音"]
+      }
+    },
+    {
+      "id": "sidebar.menu.read",
+      "category": "sidebar",
+      "title": "右键：标为未读 / 标为已读",
+      "severity": "fail",
+      "grok": { "includesAll": ["标为未读", "标为已读"] },
+      "vork": {
+        "files": ["features/navigation/Sidebar.tsx"],
+        "includesAll": ["标为未读", "标为已读"]
+      }
+    },
+    {
+      "id": "sidebar.menu.move-label",
+      "category": "sidebar",
+      "title": "右键子菜单触发文案「移至」/「移至分组」",
+      "severity": "fail",
+      "grok": { "includesAny": ["移至分组", "移至"] },
+      "vork": {
+        "files": ["features/navigation/Sidebar.tsx"],
+        "includesAny": ["移至分组", ">移至<"],
+        "forbidden": [">移到<", "移到</ContextMenuSubTrigger>"]
+      }
+    },
+    {
+      "id": "sidebar.menu.move-ungrouped",
+      "category": "sidebar",
+      "title": "移至目标默认项为「未分组」",
+      "severity": "fail",
+      "grok": { "includes": ["未分组"] },
+      "vork": {
+        "files": ["features/navigation/Sidebar.tsx"],
+        "includes": ["未分组"],
+        "forbidden": ["对话（默认）"]
+      }
+    },
+    {
+      "id": "sidebar.menu.move-new-section",
+      "category": "sidebar",
+      "title": "右键：移至新分组",
+      "severity": "fail",
+      "grok": { "includes": ["移至新分组"] },
+      "vork": {
+        "files": ["features/navigation/Sidebar.tsx"],
+        "includes": ["移至新分组"],
+        "forbidden": ["移到新分区"]
+      }
+    },
+    {
+      "id": "sidebar.menu.hide",
+      "category": "sidebar",
+      "title": "右键：从侧边栏隐藏",
+      "severity": "fail",
+      "grok": { "includes": ["从侧边栏隐藏"] },
+      "vork": {
+        "files": ["features/navigation/Sidebar.tsx"],
+        "includes": ["从侧边栏隐藏"],
+        "forbidden": ["从侧栏隐藏"]
+      }
+    },
+    {
+      "id": "sidebar.menu.bot-settings",
+      "category": "sidebar",
+      "title": "右键：Bot 设置",
+      "severity": "fail",
+      "grok": { "includes": ["Bot 设置"] },
+      "vork": {
+        "files": ["features/navigation/Sidebar.tsx"],
+        "includes": ["Bot 设置"]
+      }
+    },
+    {
+      "id": "sidebar.menu.section-ops",
+      "category": "sidebar",
+      "title": "分组右键：分组操作 / 重命名分组 / 上移 / 下移",
+      "severity": "fail",
+      "grok": { "includesAll": ["分组操作", "重命名分组", "上移", "下移"] },
+      "vork": {
+        "files": ["features/navigation/Sidebar.tsx"],
+        "includesAll": ["分组操作", "重命名分组", "上移", "下移"]
+      }
+    },
+    {
+      "id": "sidebar.menu.new-section",
+      "category": "sidebar",
+      "title": "侧栏：新建分组",
+      "severity": "fail",
+      "grok": { "includes": ["新建分组"] },
+      "vork": {
+        "files": ["features/navigation/Sidebar.tsx"],
+        "includes": ["新建分组"]
+      }
+    },
+    {
+      "id": "sidebar.menu.delete-section",
+      "category": "sidebar",
+      "title": "分组右键含删除（Vork 用「删除分组」）",
+      "severity": "warn",
+      "grok": null,
+      "vork": {
+        "files": ["features/navigation/Sidebar.tsx"],
+        "includesAny": ["删除分组", "删除分区"]
+      }
+    },
+    {
+      "id": "chat.stick-threshold",
+      "category": "chat",
+      "title": "贴底阈值数量级（Grok≈4px；Vork 当前 96，差异需人工确认是否故意）",
+      "severity": "warn",
+      "grok": { "includes": ["nearBottomThresholdPx:4"] },
+      "vork": {
+        "files": ["features/chat/ConversationView.tsx"],
+        "includes": ["STICK_THRESHOLD_PX = 4"],
+        "forbidden": []
+      }
+    },
+    {
+      "id": "settings.fixed-height",
+      "category": "settings",
+      "title": "设置弹窗固定高度壳（不随内容撑开）",
+      "severity": "fail",
+      "grok": null,
+      "vork": {
+        "files": ["features/settings/SettingsDialog.tsx"],
+        "includesAll": ["h-[min(86vh,32rem)]", "overflow-hidden", "flex-col"]
+      }
+    },
+    {
+      "id": "settings.title",
+      "category": "settings",
+      "title": "设置标题「系统设置」",
+      "severity": "fail",
+      "grok": { "includes": ["系统设置"] },
+      "vork": {
+        "files": ["features/settings/SettingsDialog.tsx"],
+        "includes": ["系统设置"]
+      }
+    },
+    {
+      "id": "chat.stick-to-bottom",
+      "category": "chat",
+      "title": "聊天 stick-to-bottom（阈值 + 阈值判断）",
+      "severity": "fail",
+      "grok": { "includes": ["nearBottomThresholdPx"] },
+      "vork": {
+        "files": ["features/chat/ConversationView.tsx"],
+        "includesAll": [
+          "stickToBottomRef",
+          "STICK_THRESHOLD_PX",
+          "scrollHeight - viewport.scrollTop - viewport.clientHeight"
+        ]
+      }
+    },
+    {
+      "id": "chat.scrollbar-class",
+      "category": "chat",
+      "title": "消息区使用 scrollbar-grok",
+      "severity": "fail",
+      "grok": null,
+      "vork": {
+        "files": ["features/chat/ConversationView.tsx"],
+        "includes": ["scrollbar-grok"]
+      }
+    },
+    {
+      "id": "chat.empty-state",
+      "category": "chat",
+      "title": "空对话态存在引导文案",
+      "severity": "fail",
+      "grok": null,
+      "vork": {
+        "files": ["features/chat/ConversationView.tsx"],
+        "includes": ["开始使用"]
+      }
+    },
+    {
+      "id": "composer.shell",
+      "category": "composer",
+      "title": "Composer：圆角壳 + Enter 发送",
+      "severity": "fail",
+      "grok": null,
+      "vork": {
+        "files": ["features/chat/MessageComposer.tsx"],
+        "includesAll": [
+          "className=\"composer",
+          "rounded-3xl",
+          "Enter 发送",
+          "Shift+Enter"
+        ]
+      }
+    },
+    {
+      "id": "composer.attachments",
+      "category": "composer",
+      "title": "Composer：附件 / 拖放",
+      "severity": "fail",
+      "grok": null,
+      "vork": {
+        "files": ["features/chat/MessageComposer.tsx"],
+        "includesAll": ["添加附件", "onDrop", "松开以添加附件"]
+      }
+    },
+    {
+      "id": "home.empty",
+      "category": "empty",
+      "title": "首页空态 CTA",
+      "severity": "fail",
+      "grok": null,
+      "vork": {
+        "files": ["routes/HomePage.tsx"],
+        "includesAll": ["创建你的第一个 Bot", "开始新对话"]
+      }
+    },
+    {
+      "id": "manual.visual-scrollbar",
+      "category": "manual",
+      "title": "肉眼：侧栏/消息滚动条粗细与颜色",
+      "severity": "manual",
+      "grok": null,
+      "vork": null
+    },
+    {
+      "id": "manual.stick-behavior",
+      "category": "manual",
+      "title": "肉眼：上滑离开底部后新消息不强制贴底；靠近底部再贴底",
+      "severity": "manual",
+      "grok": null,
+      "vork": null
+    },
+    {
+      "id": "manual.context-menu-runtime",
+      "category": "manual",
+      "title": "运行时：侧栏右键菜单项顺序与可用性",
+      "severity": "manual",
+      "grok": null,
+      "vork": null
+    },
+    {
+      "id": "manual.settings-height-runtime",
+      "category": "manual",
+      "title": "运行时：切换设置分区时弹窗高度不变",
+      "severity": "manual",
+      "grok": null,
+      "vork": null
+    }
+  ]
+}
