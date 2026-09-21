@@ -19,6 +19,7 @@ import {
   FakeActionModel,
   type ActionModel
 } from "./fake-action-model.js";
+import { evaluateActionPolicy } from "./policy.js";
 import type { TaskNotifier } from "./queue.js";
 import { retryOrFailSlotWait, toSlotWaitError } from "./slot-retry.js";
 import { assertTaskStillActive } from "./task-guard.js";
@@ -124,6 +125,17 @@ export async function runAgentLoop(rawJob: TaskJob, deps: AgentLoopDependencies)
         payload: { actionType: action.type, turn }
       });
       await notify(deps.notifier, task.id);
+
+      const policy = evaluateActionPolicy(action);
+      if (policy.decision === "deny" || policy.decision === "needs_approval") {
+        if (!(await assertTaskStillActive(deps.repos, task.id))) return;
+        await deps.repos.failTask(
+          task.id,
+          policy.decision === "needs_approval" ? "APPROVAL_REQUIRED" : "POLICY_DENIED"
+        );
+        await notify(deps.notifier, task.id);
+        return;
+      }
 
       if (action.type === "task.complete") {
         if (!(await assertTaskStillActive(deps.repos, task.id))) return;

@@ -1,6 +1,7 @@
 import type { TaskJob } from "@vork/contracts";
 import type { Job } from "bullmq";
 import type { Repositories } from "@vork/database";
+import { createActionModelFromEnv, isAgentLlmMessage } from "./action-model.js";
 import { runAgentLoop } from "./agent-loop.js";
 import type { ComputerClientLike } from "./computer-client.js";
 import { isAgentFileMessage } from "./fake-action-model.js";
@@ -61,6 +62,22 @@ export async function runTask(
       computer: deps.computer,
       notifier: deps.notifier,
       job: queueJob
+    });
+    return;
+  }
+
+  if (isAgentLlmMessage(userMessage.content)) {
+    if (!deps.computer) {
+      await failWithoutComputer(job.taskId, deps);
+      return;
+    }
+    const bot = await deps.repos.getBot({ userId: task.userId, botId: task.botId });
+    await runAgentLoop(job, {
+      repos: deps.repos,
+      computer: deps.computer,
+      notifier: deps.notifier,
+      job: queueJob,
+      actionModel: createActionModelFromEnv({ systemPrompt: bot?.persona })
     });
     return;
   }

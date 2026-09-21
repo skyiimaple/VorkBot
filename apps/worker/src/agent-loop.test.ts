@@ -103,6 +103,23 @@ describe("runAgentLoop", () => {
     });
   });
 
+  it("fails when policy denies an unsafe file path", async () => {
+    const job = await createJob("[agent-file] 危险路径");
+    const computer = mockComputer();
+    const actionModel = new FakeActionModel([
+      { type: "file.write", path: "../escape.txt", content: "nope" }
+    ]);
+
+    await runAgentLoop(job, { repos, computer, notifier, actionModel });
+
+    expect((await repos.getTask(job.taskId))?.status).toBe("failed");
+    expect((await repos.listTaskEvents(job.taskId, 0)).at(-1)).toMatchObject({
+      type: "task.failed",
+      payload: { errorCode: "POLICY_DENIED" }
+    });
+    expect(computer.writeFile).not.toHaveBeenCalled();
+  });
+
   it("fails with budget.exceeded when model turns are exhausted", async () => {
     const job = await createJob("[agent-file] 预算");
     const computer = mockComputer();

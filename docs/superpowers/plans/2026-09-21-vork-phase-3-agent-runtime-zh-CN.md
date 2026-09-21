@@ -60,7 +60,7 @@ skills/…                            仓库内 Skill 手册（与 DB 草稿并�
 - [x] **Step 1：写失败测试**（断言合法 `file.write` 通过、未知 type 失败、预算正整数）
 - [x] **Step 2：实现 Schema 与默认预算**
 - [x] **Step 3：测试通过** — `pnpm --filter @vork/contracts test`
-- [ ] **Step 4：Commit** — `feat(contracts): 添加 Agent 动作与任务预算契约`（本轮未单独提交，与 Task 2–3 同批待提交）
+- [x] **Step 4：Commit** — 已并入 `a535a48`（Task 1–3 同批）
 
 ---
 
@@ -74,7 +74,7 @@ skills/…                            仓库内 Skill 手册（与 DB 草稿并�
 - 产出：`createBudgetTracker(budget)` → `{ recordModelTurn(), recordToolCall(), assertWithinBudget(startedAt), snapshot() }`
 - 超限抛出带 code `BUDGET_EXCEEDED` 的错误
 
-- [x] **Step 1–4：** TDD 实现（`budget.ts` + 单测已通过）；Commit 待与 Agent 循环一并提交
+- [x] **Step 1–4：** TDD 实现；已提交 `a535a48`
 
 ---
 
@@ -91,28 +91,27 @@ skills/…                            仓库内 Skill 手册（与 DB 草稿并�
 - `runAgentLoop(job, deps)`：claim running → 循环 nextAction → 执行 → 检查取消/预算 → complete/fail
 - Fake 序列：`file.write` → `file.read` → `message.reply` → `task.complete`
 
-- [x] **Step 1–4：** 集成测试用 mock Computer 已通过（`[agent-file]` → FakeActionModel 写/读/回复）；Commit 待提交
+- [x] **Step 1–4：** 集成测试通过；已提交 `a535a48`
 
 ---
 
 ## Task 4：真模型结构化动作（OpenAI-compatible）
 
-**文件：** `apps/worker/src/action-model.ts`、扩展 `openai-compatible-model.ts` 或并列适配器
+**文件：** `apps/worker/src/action-model.ts`、测试 `action-model.test.ts`；`run-task` 识别 `[agent-llm]`
 
-- 用 JSON / tool_calls 约束输出为 `AgentAction`；解析失败 → `task.fail`
-- 聊天路径可继续 `streamReply`；工具任务走 ActionModel
-- 常规单测不打真网；可选冒烟脚本读 `LLM_API_KEY`
+- [x] JSON / `response_format: json_object` 约束输出为 `AgentAction`；解析失败 → `task.fail(INVALID_AGENT_ACTION)`
+- [x] 聊天路径继续 `streamReply`；`[agent-llm]` 走 ActionModel（有 key 用 OpenAICompatibleActionModel）
+- [x] 常规单测 mock fetch，不打真网
 
 ---
 
 ## Task 5：权限策略层（低风险自动允许）
 
-**文件：** `apps/worker/src/policy.ts`
+**文件：** `apps/worker/src/policy.ts`；接入 `agent-loop`
 
-- `file.read` / `message.reply` / `task.complete` → allow
-- `file.write` 在 bot 工作区内 → allow（本阶段）
-- 未知动作 → deny
-- 预留 `needs_approval` 返回值供 Task 6
+- [x] `file.read` / `message.reply` / `task.complete` / 工作区内 `file.write` → allow
+- [x] 不安全路径 → deny（`POLICY_DENIED`）
+- [x] 预留 `needs_approval` 返回值供 Task 6
 
 ---
 
