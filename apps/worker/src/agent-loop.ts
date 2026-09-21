@@ -52,6 +52,7 @@ function isToolAction(action: AgentAction): boolean {
 export async function runAgentLoop(rawJob: TaskJob, deps: AgentLoopDependencies): Promise<void> {
   const task = await deps.repos.getTask(rawJob.taskId);
   if (!task || terminalStatuses.has(task.status)) return;
+  if (task.status === "waiting_approval") return;
 
   const budget = deps.budget ?? DEFAULT_TASK_BUDGET;
   const tracker = createBudgetTracker(budget);
@@ -102,6 +103,42 @@ export async function runAgentLoop(rawJob: TaskJob, deps: AgentLoopDependencies)
     });
     const userMessage = messages.find((m) => m.id === task.messageId && m.authorType === "user");
     if (!userMessage) throw new Error("Task user message is unavailable");
+
+    const resume = await deps.repos.claimApprovedActionForResume(task.id);
+    if (resume) {
+      const approvedAction = AgentActionSchema.parse(resume.action);
+      await deps.repos.appendTaskEvent({
+        taskId: task.id,
+        type: AGENT_EVENT_TYPES.ACTION,
+        payload: { actionType: approvedAction.type, turn: turn + 1, resumed: true, approvalId: resume.id }
+      });
+      await notify(deps.notifier, task.id);
+
+      if (approvedAction.type === "memory.propose") {
+        await deps.repos.insertMemory({
+          userId: task.userId,
+          botId: task.botId,
+          kind: approvedAction.kind,
+          content: approvedAction.content,
+          sensitivity: approvedAction.sensitivity,
+          sourceTaskId: task.id
+        });
+        lastObservation = `saved ${approvedAction.kind} memory`;
+      } else if (isToolAction(approvedAction)) {
+        tracker.recordToolCall();
+        tracker.assertWithinBudget(startedAt);
+        if (!(await assertTaskStillActive(deps.repos, task.id))) return;
+        activeTool = approvedAction.type;
+        lastObservation = await executeToolAction(approvedAction, {
+          taskId: task.id,
+          leaseId: lease.leaseId,
+          computer: deps.computer,
+          repos: deps.repos,
+          notifier: deps.notifier
+        });
+        activeTool = undefined;
+      }
+    }
 
     while (true) {
       if (!(await assertTaskStillActive(deps.repos, task.id))) return;
@@ -203,36 +240,13 @@ export async function runAgentLoop(rawJob: TaskJob, deps: AgentLoopDependencies)
         if (!(await assertTaskStillActive(deps.repos, task.id))) return;
 
         activeTool = action.type;
-        await deps.repos.appendTaskEvent({
+        lastObservation = await executeToolAction(action, {
           taskId: task.id,
-          type: TOOL_EVENT_TYPES.STARTED,
-          payload: { toolName: action.type, path: action.path }
+          leaseId: lease.leaseId,
+          computer: deps.computer,
+          repos: deps.repos,
+          notifier: deps.notifier
         });
-        await notify(deps.notifier, task.id);
-
-        if (action.type === "file.write") {
-          const written = await deps.computer.writeFile(lease.leaseId, action.path, action.content);
-          lastObservation = `wrote ${written.path} (${written.bytes} bytes)`;
-          await deps.repos.appendTaskEvent({
-            taskId: task.id,
-            type: TOOL_EVENT_TYPES.FINISHED,
-            payload: { toolName: action.type, path: written.path, bytes: written.bytes }
-          });
-        } else {
-          const read = await deps.computer.readFile(lease.leaseId, action.path);
-          lastObservation = `read ${read.path}: ${read.content.slice(0, 500)}${read.truncated ? "…" : ""}`;
-          await deps.repos.appendTaskEvent({
-            taskId: task.id,
-            type: TOOL_EVENT_TYPES.FINISHED,
-            payload: {
-              toolName: action.type,
-              path: read.path,
-              bytes: read.content.length,
-              truncated: read.truncated
-            }
-          });
-        }
-        await notify(deps.notifier, task.id);
         activeTool = undefined;
         continue;
       }
@@ -281,6 +295,51 @@ export async function runAgentLoop(rawJob: TaskJob, deps: AgentLoopDependencies)
       }
     }
   }
+}
+
+async function executeToolAction(
+  action: Extract<AgentAction, { type: "file.write" | "file.read" }>,
+  deps: {
+    taskId: string;
+    leaseId: string;
+    computer: ComputerClientLike;
+    repos: Repositories;
+    notifier: TaskNotifier;
+  }
+): Promise<string> {
+  await deps.repos.appendTaskEvent({
+    taskId: deps.taskId,
+    type: TOOL_EVENT_TYPES.STARTED,
+    payload: { toolName: action.type, path: action.path }
+  });
+  await notify(deps.notifier, deps.taskId);
+
+  if (action.type === "file.write") {
+    const written = await deps.computer.writeFile(deps.leaseId, action.path, action.content);
+    const observation = `wrote ${written.path} (${written.bytes} bytes)`;
+    await deps.repos.appendTaskEvent({
+      taskId: deps.taskId,
+      type: TOOL_EVENT_TYPES.FINISHED,
+      payload: { toolName: action.type, path: written.path, bytes: written.bytes }
+    });
+    await notify(deps.notifier, deps.taskId);
+    return observation;
+  }
+
+  const read = await deps.computer.readFile(deps.leaseId, action.path);
+  const observation = `read ${read.path}: ${read.content.slice(0, 500)}${read.truncated ? "…" : ""}`;
+  await deps.repos.appendTaskEvent({
+    taskId: deps.taskId,
+    type: TOOL_EVENT_TYPES.FINISHED,
+    payload: {
+      toolName: action.type,
+      path: read.path,
+      bytes: read.content.length,
+      truncated: read.truncated
+    }
+  });
+  await notify(deps.notifier, deps.taskId);
+  return observation;
 }
 
 function chunkText(text: string, size: number): string[] {

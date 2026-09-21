@@ -99,3 +99,73 @@ describe("cancelTask request", () => {
     expect(result).toMatchObject({ operation: "cancelTask", data: { task: { id: "task_1", status: "cancelled" } } });
   });
 });
+
+describe("credential requests", () => {
+  it("maps upsertCredential to PUT /v1/credentials", async () => {
+    const handlers = new Map<string, (...args: any[]) => unknown>();
+    const ipcMain = { handle: vi.fn((channel, handler) => handlers.set(channel, handler)), on: vi.fn() };
+    const payload = {
+      source: "database",
+      currentMode: {
+        id: "mode_remote",
+        label: "当前模式",
+        description: "已配置 openai-compatible（deepseek-v4-flash）。密钥仅保存，接口不回读明文。"
+      },
+      credentials: [
+        {
+          id: "credential_openai_compatible",
+          provider: "openai-compatible",
+          label: "openai-compatible",
+          status: "enabled",
+          statusLabel: "启用",
+          mode: "remote",
+          modeLabel: "远程",
+          configured: true,
+          summary: "密钥 ****leak · https://api.deepseek.com",
+          baseUrl: "https://api.deepseek.com",
+          model: "deepseek-v4-flash"
+        }
+      ]
+    };
+    const fetchImplementation = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify(payload), { status: 200, headers: { "content-type": "application/json" } })
+    );
+    registerApiIpc(ipcMain as never, fetchImplementation as never, 0);
+
+    const result = await handlers.get("vork:request")?.(
+      {},
+      {
+        operation: "upsertCredential",
+        input: {
+          provider: "openai-compatible",
+          apiKey: "sk-phase3-do-not-leak",
+          baseUrl: "https://api.deepseek.com",
+          model: "deepseek-v4-flash"
+        }
+      }
+    );
+    expect(String(fetchImplementation.mock.calls[0]?.[0])).toContain("/v1/credentials");
+    expect(fetchImplementation.mock.calls[0]?.[1]).toMatchObject({ method: "PUT" });
+    expect(result).toMatchObject({ operation: "upsertCredential", data: { source: "database" } });
+  });
+
+  it("maps deleteCredential to DELETE /v1/credentials", async () => {
+    const handlers = new Map<string, (...args: any[]) => unknown>();
+    const ipcMain = { handle: vi.fn((channel, handler) => handlers.set(channel, handler)), on: vi.fn() };
+    const fetchImplementation = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          source: "stub",
+          currentMode: { id: "mode_fake", label: "当前模式", description: "FakeModel" },
+          credentials: []
+        }),
+        { status: 200, headers: { "content-type": "application/json" } }
+      )
+    );
+    registerApiIpc(ipcMain as never, fetchImplementation as never, 0);
+
+    await handlers.get("vork:request")?.({}, { operation: "deleteCredential", input: { provider: "openai-compatible" } });
+    expect(String(fetchImplementation.mock.calls[0]?.[0])).toContain("/v1/credentials");
+    expect(fetchImplementation.mock.calls[0]?.[1]).toMatchObject({ method: "DELETE" });
+  });
+});

@@ -86,7 +86,7 @@ async function requestComputerFrame(
   return ComputerFrameResponseSchema.parse({ base64: bytes.toString("base64") });
 }
 
-function apiRequestDetails(request: ApiRequest): { path: string; method: "GET" | "POST"; body?: unknown } {
+function apiRequestDetails(request: ApiRequest): { path: string; method: "GET" | "POST" | "PUT" | "DELETE"; body?: unknown } {
   switch (request.operation) {
     case "listBots":
       return { path: "/v1/bots", method: "GET" };
@@ -117,6 +117,10 @@ function apiRequestDetails(request: ApiRequest): { path: string; method: "GET" |
       return { path: "/v1/files", method: "GET" };
     case "listCredentials":
       return { path: "/v1/credentials", method: "GET" };
+    case "upsertCredential":
+      return { path: "/v1/credentials", method: "PUT", body: request.input };
+    case "deleteCredential":
+      return { path: "/v1/credentials", method: "DELETE", body: request.input };
   }
 }
 

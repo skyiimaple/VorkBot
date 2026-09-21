@@ -10,7 +10,8 @@ import type { VorkApi } from "../../preload/api.js";
 import { AppShell } from "@/layouts/AppShell";
 import { ConversationPage } from "@/routes/ConversationPage";
 import { HomePage } from "@/routes/HomePage";
-import { CredentialsPage, FilesPage, SettingsPage, SkillsPage, TasksPage } from "@/routes/ManagePages";
+import { CredentialsPage } from "@/features/credentials/CredentialsPage";
+import { FilesPage, SettingsPage, SkillsPage, TasksPage } from "@/routes/ManagePages";
 import { NewChatPage } from "@/routes/NewChatPage";
 
 export type RouterContext = {

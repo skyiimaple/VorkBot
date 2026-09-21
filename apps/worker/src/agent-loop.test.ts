@@ -160,6 +160,67 @@ describe("runAgentLoop", () => {
     expect((await repos.listTaskEvents(job.taskId, 0)).some((event) => event.type === "approval.request")).toBe(true);
   });
 
+  it("resumes and executes the approved sensitive write then continues", async () => {
+    const job = await createJob("[agent-file] 敏感写入续跑");
+    const computer = mockComputer();
+    const actionModel = new FakeActionModel([
+      { type: "file.write", path: "sensitive/token.txt", content: "secret" },
+      { type: "message.reply", text: "已写入敏感文件。" },
+      { type: "task.complete" }
+    ]);
+
+    await runAgentLoop(job, { repos, computer, notifier, actionModel });
+    expect((await repos.getTask(job.taskId))?.status).toBe("waiting_approval");
+    expect(computer.writeFile).not.toHaveBeenCalled();
+
+    const resolved = await repos.resolveApproval({ taskId: job.taskId, decision: "approve" });
+    expect(resolved.task.status).toBe("queued");
+    expect(resolved.resume?.approvalId).toBeTruthy();
+
+    await runAgentLoop(job, { repos, computer, notifier, actionModel });
+
+    expect((await repos.getTask(job.taskId))?.status).toBe("completed");
+    expect(computer.writeFile).toHaveBeenCalledWith("lease_1", "sensitive/token.txt", "secret");
+    const messages = await repos.listMessages({
+      userId: job.userId,
+      conversationId: job.conversationId
+    });
+    expect(messages.at(-1)).toMatchObject({
+      authorType: "assistant",
+      content: "已写入敏感文件。"
+    });
+  });
+
+  it("fails with a clear message when approval is rejected", async () => {
+    const job = await createJob("[agent-file] 拒绝敏感写入");
+    const computer = mockComputer();
+    const actionModel = new FakeActionModel([
+      { type: "file.write", path: "sensitive/token.txt", content: "secret" }
+    ]);
+
+    await runAgentLoop(job, { repos, computer, notifier, actionModel });
+    const rejected = await repos.resolveApproval({ taskId: job.taskId, decision: "reject" });
+
+    expect(rejected.task.status).toBe("failed");
+    expect(rejected.resume).toBeUndefined();
+    expect(computer.writeFile).not.toHaveBeenCalled();
+
+    const events = await repos.listTaskEvents(job.taskId, 0);
+    expect(events.some((event) => event.type === "approval.resolved")).toBe(true);
+    expect(events.at(-1)).toMatchObject({
+      type: "task.failed",
+      payload: {
+        errorCode: "APPROVAL_REJECTED",
+        message: "你已拒绝写入「sensitive/token.txt」，任务已结束。"
+      }
+    });
+    const messages = await repos.listMessages({
+      userId: job.userId,
+      conversationId: job.conversationId
+    });
+    expect(messages.at(-1)?.content).toContain("你已拒绝写入");
+  });
+
   it("saves a normal memory proposal and compresses working memory on complete", async () => {
     const job = await createJob("[agent-file] 记住偏好");
     const computer = mockComputer();

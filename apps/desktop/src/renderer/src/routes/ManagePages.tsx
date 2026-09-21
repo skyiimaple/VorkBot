@@ -231,25 +231,6 @@ export function FilesPage() {
   );
 }
 
-export function CredentialsPage() {
-  return (
-    <ManagePage title="模型凭据" description="配置模型供应商与密钥（阶段 3 接入真实模型）。" path="/credentials">
-      <div className="space-y-3">
-        <div className="rounded-2xl border bg-card p-4 shadow-panel">
-          <p className="text-[13px] font-medium">当前模式</p>
-          <p className="mt-1 text-[12px] leading-relaxed text-muted-foreground">
-            使用确定性 FakeModel，无需密钥。阶段 3 才会接入真实供应商。
-          </p>
-        </div>
-        <ShellList
-          empty="尚未配置凭据。"
-          rows={[{ title: "FakeModel（内置）", meta: "本地 · 始终可用", badge: "启用", badgeTone: "primary" }]}
-        />
-      </div>
-    </ManagePage>
-  );
-}
-
 /** Deep-link /settings → open modal；不把设置做成整页主体验。 */
 export function SettingsPage() {
   const navigate = useNavigate();

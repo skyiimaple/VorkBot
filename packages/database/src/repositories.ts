@@ -439,7 +439,7 @@ export function createRepositories(options: DatabaseClientOptions = {}) {
       return rows.map(toTaskEvent);
     },
 
-    async failTask(taskId: string, errorCode: string): Promise<Task> {
+    async failTask(taskId: string, errorCode: string, message?: string): Promise<Task> {
       return sql.begin(async (transaction) => {
         const taskRows = await transaction<TaskRow[]>`
           SELECT id, user_id, bot_id, conversation_id, message_id, status, last_event_sequence, created_at, updated_at
@@ -460,9 +460,55 @@ export function createRepositories(options: DatabaseClientOptions = {}) {
           WHERE id = ${task.id}
           RETURNING id, user_id, bot_id, conversation_id, message_id, status, last_event_sequence, created_at, updated_at
         `;
+        const payload = message ? { errorCode, message } : { errorCode };
         await transaction`
           INSERT INTO task_events (id, task_id, user_id, sequence, type, payload, created_at)
-          VALUES (${id("event")}, ${task.id}, ${task.user_id}, ${sequence}, 'task.failed', ${JSON.stringify({ errorCode })}::jsonb, ${now})
+          VALUES (${id("event")}, ${task.id}, ${task.user_id}, ${sequence}, 'task.failed', ${JSON.stringify(payload)}::jsonb, ${now})
+        `;
+        return toTask(required(updatedRows, "Task could not be failed"));
+      });
+    },
+
+    async failTaskWithMessage(input: { taskId: string; errorCode: string; content: string }): Promise<Task> {
+      return sql.begin(async (transaction) => {
+        const taskRows = await transaction<TaskRow[]>`
+          SELECT id, user_id, bot_id, conversation_id, message_id, status, last_event_sequence, created_at, updated_at
+          FROM tasks WHERE id = ${input.taskId} FOR UPDATE
+        `;
+        const task = required(taskRows, "Task does not exist");
+        if (terminalTaskStatuses.includes(task.status)) {
+          throw new Error("Terminal tasks cannot be failed again");
+        }
+        const now = new Date().toISOString();
+        const messageRows = await transaction<MessageRow[]>`
+          INSERT INTO messages (id, user_id, conversation_id, author_type, content, created_at)
+          VALUES (${id("message")}, ${task.user_id}, ${task.conversation_id}, 'assistant', ${input.content}, ${now})
+          RETURNING id, user_id, conversation_id, author_type, content, created_at
+        `;
+        const message = required(messageRows, "Failure message could not be appended");
+        const deltaSequence = task.last_event_sequence + 1;
+        const messageSequence = deltaSequence + 1;
+        const failSequence = messageSequence + 1;
+        const updatedRows = await transaction<TaskRow[]>`
+          UPDATE tasks
+          SET status = 'failed', error_code = ${input.errorCode}, last_event_sequence = ${failSequence}, updated_at = ${now}
+          WHERE id = ${task.id}
+          RETURNING id, user_id, bot_id, conversation_id, message_id, status, last_event_sequence, created_at, updated_at
+        `;
+        await transaction`
+          INSERT INTO task_events (id, task_id, user_id, sequence, type, payload, created_at)
+          VALUES (${id("event")}, ${task.id}, ${task.user_id}, ${deltaSequence}, 'message.delta', ${JSON.stringify({ text: input.content })}::jsonb, ${now})
+        `;
+        await transaction`
+          INSERT INTO task_events (id, task_id, user_id, sequence, type, payload, created_at)
+          VALUES (${id("event")}, ${task.id}, ${task.user_id}, ${messageSequence}, 'message.completed', ${JSON.stringify({ messageId: message.id })}::jsonb, ${now})
+        `;
+        await transaction`
+          INSERT INTO task_events (id, task_id, user_id, sequence, type, payload, created_at)
+          VALUES (
+            ${id("event")}, ${task.id}, ${task.user_id}, ${failSequence}, 'task.failed',
+            ${JSON.stringify({ errorCode: input.errorCode, message: input.content })}::jsonb, ${now}
+          )
         `;
         return toTask(required(updatedRows, "Task could not be failed"));
       });
@@ -581,17 +627,45 @@ export function createRepositories(options: DatabaseClientOptions = {}) {
       return rows[0] ?? null;
     },
 
-    async resolveApproval(input: { taskId: string; decision: "approve" | "reject" }): Promise<Task> {
+    async claimApprovedActionForResume(
+      taskId: string
+    ): Promise<{ id: string; action: unknown; reason: string } | null> {
+      return sql.begin(async (transaction) => {
+        const rows = await transaction<{ id: string; action: unknown; reason: string }[]>`
+          SELECT id, action, reason FROM approvals
+          WHERE task_id = ${taskId} AND status = 'approved' AND executed_at IS NULL
+          ORDER BY resolved_at DESC NULLS LAST, created_at DESC
+          LIMIT 1
+          FOR UPDATE
+        `;
+        const approval = rows[0];
+        if (!approval) return null;
+        const now = new Date().toISOString();
+        await transaction`
+          UPDATE approvals SET executed_at = ${now} WHERE id = ${approval.id}
+        `;
+        return approval;
+      });
+    },
+
+    async resolveApproval(input: {
+      taskId: string;
+      decision: "approve" | "reject";
+    }): Promise<{ task: Task; resume?: { approvalId: string } }> {
       const pending = await sql<{ id: string; action: unknown }[]>`
         SELECT id, action FROM approvals WHERE task_id = ${input.taskId} AND status = 'pending' ORDER BY created_at DESC LIMIT 1
       `;
       const approval = pending[0];
       if (!approval) throw new Error("No pending approval");
-      const action = approval.action as { type?: string; kind?: string; content?: string; sensitivity?: string };
-      if (input.decision === "approve" && action?.type !== "memory.propose") {
-        throw new Error("APPROVAL_NOT_RESUMABLE");
-      }
+      const action = approval.action as {
+        type?: string;
+        kind?: string;
+        content?: string;
+        sensitivity?: string;
+        path?: string;
+      };
       const now = new Date().toISOString();
+
       if (input.decision === "reject") {
         await sql`
           UPDATE approvals SET status = 'rejected', resolved_at = ${now} WHERE id = ${approval.id}
@@ -607,7 +681,12 @@ export function createRepositories(options: DatabaseClientOptions = {}) {
           )
         `;
         await sql`UPDATE tasks SET last_event_sequence = ${sequence}, updated_at = ${now} WHERE id = ${input.taskId}`;
-        return this.failTask(input.taskId, "APPROVAL_REJECTED");
+        const failed = await this.failTaskWithMessage({
+          taskId: input.taskId,
+          errorCode: "APPROVAL_REJECTED",
+          content: rejectionMessageFor(action)
+        });
+        return { task: failed };
       }
 
       await sql`
@@ -627,6 +706,7 @@ export function createRepositories(options: DatabaseClientOptions = {}) {
         )
       `;
       await sql`UPDATE tasks SET last_event_sequence = ${sequence}, updated_at = ${now} WHERE id = ${task.id}`;
+
       if (action?.type === "memory.propose" && action.kind && action.content) {
         await this.insertMemory({
           userId: task.user_id,
@@ -636,8 +716,33 @@ export function createRepositories(options: DatabaseClientOptions = {}) {
           sensitivity: action.sensitivity === "sensitive" ? "sensitive" : "normal",
           sourceTaskId: task.id
         });
-        return (await this.completeTaskWithMessage({ taskId: task.id, content: "已批准并保存记忆。" })).task;
+        const completed = (
+          await this.completeTaskWithMessage({ taskId: task.id, content: "已批准并保存记忆。" })
+        ).task;
+        return { task: completed };
       }
+
+      if (action?.type === "file.write" || action?.type === "file.read") {
+        const queuedSequence = sequence + 1;
+        const updatedRows = await sql<TaskRow[]>`
+          UPDATE tasks
+          SET status = 'queued', last_event_sequence = ${queuedSequence}, updated_at = ${now}
+          WHERE id = ${task.id}
+          RETURNING id, user_id, bot_id, conversation_id, message_id, status, last_event_sequence, created_at, updated_at
+        `;
+        await sql`
+          INSERT INTO task_events (id, task_id, user_id, sequence, type, payload, created_at)
+          VALUES (
+            ${id("event")}, ${task.id}, ${task.user_id}, ${queuedSequence}, 'task.queued',
+            ${JSON.stringify({ reason: "approval_resume", approvalId: approval.id })}::jsonb, ${now}
+          )
+        `;
+        return {
+          task: toTask(required(updatedRows, "Task could not be requeued after approval")),
+          resume: { approvalId: approval.id }
+        };
+      }
+
       throw new Error("APPROVAL_NOT_RESUMABLE");
     },
 
@@ -759,6 +864,15 @@ export function createRepositories(options: DatabaseClientOptions = {}) {
       const row = rows[0];
       if (!row) return null;
       return { provider: row.provider, apiKey: row.api_key, baseUrl: row.base_url, model: row.model };
+    },
+
+    async deleteModelCredential(userId: string, provider = "openai-compatible"): Promise<boolean> {
+      const rows = await sql<{ id: string }[]>`
+        DELETE FROM model_credentials
+        WHERE user_id = ${userId} AND provider = ${provider}
+        RETURNING id
+      `;
+      return rows.length > 0;
     }
   };
 }
@@ -766,4 +880,17 @@ export function createRepositories(options: DatabaseClientOptions = {}) {
 function actionTypeOf(action: unknown): string {
   if (action && typeof action === "object" && "type" in action && typeof action.type === "string") return action.type;
   return "unknown";
+}
+
+function rejectionMessageFor(action: { type?: string; path?: string }): string {
+  if (action?.type === "file.write" && action.path) {
+    return `你已拒绝写入「${action.path}」，任务已结束。`;
+  }
+  if (action?.type === "file.read" && action.path) {
+    return `你已拒绝读取「${action.path}」，任务已结束。`;
+  }
+  if (action?.type === "memory.propose") {
+    return "你已拒绝保存敏感记忆，任务已结束。";
+  }
+  return "你已拒绝该操作，任务已结束。";
 }

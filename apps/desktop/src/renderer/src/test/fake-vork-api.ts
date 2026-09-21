@@ -111,7 +111,61 @@ export function createFakeVorkApi(): FakeVorkApi {
             currentMode: {
               id: "mode_fake",
               label: "当前模式",
-              description: "使用确定性 FakeModel，无需密钥。阶段 3 才会接入真实供应商。"
+              description: "使用确定性 FakeModel，无需密钥。配置远程凭据后 Worker 可走真实供应商。"
+            },
+            credentials: [
+              {
+                id: "credential_fake_model",
+                provider: "FakeModel",
+                label: "FakeModel（内置）",
+                status: "enabled",
+                statusLabel: "启用",
+                mode: "builtin",
+                modeLabel: "本地",
+                configured: true,
+                summary: "确定性假模型，始终可用，无需密钥。"
+              }
+            ]
+          }
+        };
+      case "upsertCredential": {
+        const masked = `****${input.input.apiKey.slice(-4)}`;
+        return {
+          operation: "upsertCredential",
+          data: {
+            source: "database",
+            currentMode: {
+              id: "mode_remote",
+              label: "当前模式",
+              description: `已配置 ${input.input.provider}（${input.input.model ?? "默认模型"}）。密钥仅保存，接口不回读明文。`
+            },
+            credentials: [
+              {
+                id: "credential_openai_compatible",
+                provider: input.input.provider,
+                label: input.input.provider,
+                status: "enabled",
+                statusLabel: "启用",
+                mode: "remote",
+                modeLabel: "远程",
+                configured: true,
+                summary: `密钥 ${masked}${input.input.baseUrl ? ` · ${input.input.baseUrl}` : ""}`,
+                baseUrl: input.input.baseUrl,
+                model: input.input.model
+              }
+            ]
+          }
+        };
+      }
+      case "deleteCredential":
+        return {
+          operation: "deleteCredential",
+          data: {
+            source: "stub",
+            currentMode: {
+              id: "mode_fake",
+              label: "当前模式",
+              description: "使用确定性 FakeModel，无需密钥。配置远程凭据后 Worker 可走真实供应商。"
             },
             credentials: [
               {

@@ -7,6 +7,7 @@ import {
   ListTasksResponseSchema,
   ListWorkspaceFilesResponseSchema,
   MessageSchema,
+  ModelCredentialWriteSchema,
   TaskEventSchema,
   TaskSchema
 } from "@vork/contracts";
@@ -30,7 +31,14 @@ export const ApiRequestSchema = z.discriminatedUnion("operation", [
   z.object({ operation: z.literal("listTasks"), input: z.object({}).strict() }).strict(),
   z.object({ operation: z.literal("listSkills"), input: z.object({}).strict() }).strict(),
   z.object({ operation: z.literal("listFiles"), input: z.object({}).strict() }).strict(),
-  z.object({ operation: z.literal("listCredentials"), input: z.object({}).strict() }).strict()
+  z.object({ operation: z.literal("listCredentials"), input: z.object({}).strict() }).strict(),
+  z.object({ operation: z.literal("upsertCredential"), input: ModelCredentialWriteSchema.strict() }).strict(),
+  z
+    .object({
+      operation: z.literal("deleteCredential"),
+      input: z.object({ provider: z.literal("openai-compatible").default("openai-compatible") }).strict()
+    })
+    .strict()
 ]);
 
 export const ApiResponseSchema = z.discriminatedUnion("operation", [
@@ -44,7 +52,9 @@ export const ApiResponseSchema = z.discriminatedUnion("operation", [
   z.object({ operation: z.literal("listTasks"), data: ListTasksResponseSchema }).strict(),
   z.object({ operation: z.literal("listSkills"), data: ListSkillsResponseSchema }).strict(),
   z.object({ operation: z.literal("listFiles"), data: ListWorkspaceFilesResponseSchema }).strict(),
-  z.object({ operation: z.literal("listCredentials"), data: ListModelCredentialsResponseSchema }).strict()
+  z.object({ operation: z.literal("listCredentials"), data: ListModelCredentialsResponseSchema }).strict(),
+  z.object({ operation: z.literal("upsertCredential"), data: ListModelCredentialsResponseSchema }).strict(),
+  z.object({ operation: z.literal("deleteCredential"), data: ListModelCredentialsResponseSchema }).strict()
 ]);
 
 export const TaskSubscriptionSchema = z.object({

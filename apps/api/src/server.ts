@@ -30,7 +30,7 @@ export async function start(): Promise<void> {
   const app = buildApp({
     repositories,
     queue: {
-      publish: (job) => queue.add("execute-task", job, { jobId: job.taskId })
+      publish: (job, options) => queue.add("execute-task", job, { jobId: options?.jobId ?? job.taskId })
     },
     eventSubscriber: new RedisTaskEventSubscriber(redisUrl),
     taskEventPublisher: new RedisTaskEventPublisher(redisUrl),

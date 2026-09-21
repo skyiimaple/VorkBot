@@ -28,8 +28,11 @@ CREATE TABLE IF NOT EXISTS approvals (
   action jsonb NOT NULL,
   status text NOT NULL CHECK (status IN ('pending', 'approved', 'rejected')),
   created_at timestamptz NOT NULL,
-  resolved_at timestamptz
+  resolved_at timestamptz,
+  executed_at timestamptz
 );
+
+ALTER TABLE approvals ADD COLUMN IF NOT EXISTS executed_at timestamptz;
 
 CREATE TABLE IF NOT EXISTS memories (
   id text PRIMARY KEY,

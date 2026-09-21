@@ -6,12 +6,18 @@ import { buildApp } from "../app.js";
 describe("Manage routes", () => {
   const databaseUrl = getTestDatabaseUrl();
   const repositories = createRepositories({ databaseUrl });
+  const publishedJobs: Array<{ taskId: string; jobId?: string }> = [];
   const app = buildApp({
     repositories,
-    queue: { publish: async () => undefined }
+    queue: {
+      publish: async (job, options) => {
+        publishedJobs.push({ taskId: job.taskId, jobId: options?.jobId });
+      }
+    }
   });
 
   beforeEach(async () => {
+    publishedJobs.length = 0;
     await resetFoundationDatabase(databaseUrl);
   });
 
@@ -115,8 +121,23 @@ describe("Manage routes", () => {
     expect(JSON.stringify(saved.json())).not.toContain(secret);
     expect(saved.json()).toMatchObject({
       source: "database",
-      credentials: [{ configured: true, summary: expect.stringContaining("****leak") }]
+      credentials: [
+        {
+          configured: true,
+          summary: expect.stringContaining("****leak"),
+          baseUrl: "https://api.deepseek.com",
+          model: "deepseek-v4-flash"
+        }
+      ]
     });
+
+    const deleted = await app.inject({
+      method: "DELETE",
+      url: "/v1/credentials",
+      payload: { provider: "openai-compatible" }
+    });
+    expect(deleted.statusCode).toBe(200);
+    expect(deleted.json().source).toBe("stub");
   });
 
   it("approves a sensitive memory and saves the task as a skill draft", async () => {
@@ -146,6 +167,7 @@ describe("Manage routes", () => {
     });
     expect(approved.statusCode).toBe(200);
     expect(approved.json().task.status).toBe("completed");
+    expect(publishedJobs.some((job) => job.jobId?.includes(":resume:"))).toBe(false);
 
     const memories = await app.inject({ method: "GET", url: `/v1/bots/${botId}/memories` });
     expect(memories.json().memories).toEqual([
@@ -158,5 +180,73 @@ describe("Manage routes", () => {
     const skills = await app.inject({ method: "GET", url: "/v1/skills" });
     expect(skills.json().source).toBe("database");
     expect(skills.json().skills[0]).toMatchObject({ status: "draft", statusLabel: "草稿" });
+  });
+
+  it("requeues a sensitive file write after approval", async () => {
+    const created = await app.inject({
+      method: "POST",
+      url: "/v1/bots",
+      payload: { name: "文件审批 Bot", persona: "文件" }
+    });
+    const conversationId = created.json().conversation.id as string;
+    const queued = await app.inject({
+      method: "POST",
+      url: `/v1/conversations/${conversationId}/messages`,
+      payload: { content: "写敏感文件" }
+    });
+    const taskId = queued.json().task.id as string;
+    await repositories.requestApproval({
+      taskId,
+      reason: "sensitive_write",
+      action: { type: "file.write", path: "sensitive/token.txt", content: "secret" }
+    });
+
+    const approved = await app.inject({
+      method: "POST",
+      url: `/v1/tasks/${taskId}/approvals`,
+      payload: { decision: "approve" }
+    });
+    expect(approved.statusCode).toBe(200);
+    expect(approved.json().task.status).toBe("queued");
+    expect(publishedJobs.some((job) => job.taskId === taskId && job.jobId?.startsWith(`${taskId}:resume:`))).toBe(
+      true
+    );
+  });
+
+  it("rejects approval with a clear failure message", async () => {
+    const created = await app.inject({
+      method: "POST",
+      url: "/v1/bots",
+      payload: { name: "拒绝审批 Bot", persona: "文件" }
+    });
+    const conversationId = created.json().conversation.id as string;
+    const queued = await app.inject({
+      method: "POST",
+      url: `/v1/conversations/${conversationId}/messages`,
+      payload: { content: "写敏感文件" }
+    });
+    const taskId = queued.json().task.id as string;
+    await repositories.requestApproval({
+      taskId,
+      reason: "sensitive_write",
+      action: { type: "file.write", path: "sensitive/token.txt", content: "secret" }
+    });
+
+    const rejected = await app.inject({
+      method: "POST",
+      url: `/v1/tasks/${taskId}/approvals`,
+      payload: { decision: "reject" }
+    });
+    expect(rejected.statusCode).toBe(200);
+    expect(rejected.json().task.status).toBe("failed");
+
+    const events = await repositories.listTaskEvents(taskId, 0);
+    expect(events.at(-1)).toMatchObject({
+      type: "task.failed",
+      payload: {
+        errorCode: "APPROVAL_REJECTED",
+        message: "你已拒绝写入「sensitive/token.txt」，任务已结束。"
+      }
+    });
   });
 });

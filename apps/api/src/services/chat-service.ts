@@ -9,7 +9,7 @@ import {
 import type { Repositories } from "@vork/database";
 
 export type TaskQueue = {
-  publish(job: TaskJob): Promise<unknown>;
+  publish(job: TaskJob, options?: { jobId?: string }): Promise<unknown>;
 };
 
 export type SubmitMessageResult =

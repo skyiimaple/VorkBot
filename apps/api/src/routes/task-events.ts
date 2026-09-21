@@ -73,18 +73,34 @@ export function registerTaskEventRoutes(
       return reply.code(409).send(ErrorResponseSchema.parse({ error: "任务不在等待审批" }));
     }
     try {
-      const resolved = TaskSchema.parse(
-        await dependencies.repositories.resolveApproval({ taskId, decision: body.decision })
-      );
+      const resolved = await dependencies.repositories.resolveApproval({ taskId, decision: body.decision });
+      const nextTask = TaskSchema.parse(resolved.task);
+      if (resolved.resume) {
+        try {
+          await dependencies.queue.publish(
+            {
+              taskId: nextTask.id,
+              userId: nextTask.userId,
+              botId: nextTask.botId,
+              conversationId: nextTask.conversationId,
+              messageId: nextTask.messageId
+            },
+            { jobId: `${nextTask.id}:resume:${resolved.resume.approvalId}` }
+          );
+        } catch {
+          await dependencies.repositories.failTask(nextTask.id, "TASK_PUBLICATION_FAILED", "批准后续跑入队失败。");
+          return reply.code(500).send(ErrorResponseSchema.parse({ error: "批准后续跑入队失败" }));
+        }
+      }
       try {
         await dependencies.taskEventPublisher?.publish(taskId);
       } catch {
         // 持久化事件仍可按游标对齐。
       }
-      return { task: resolved };
+      return { task: nextTask };
     } catch (error) {
       if (error instanceof Error && error.message === "APPROVAL_NOT_RESUMABLE") {
-        return reply.code(409).send(ErrorResponseSchema.parse({ error: "当前仅支持批准记忆写入" }));
+        return reply.code(409).send(ErrorResponseSchema.parse({ error: "当前不支持批准该类型操作" }));
       }
       return reply.code(409).send(ErrorResponseSchema.parse({ error: "无法处理审批" }));
     }

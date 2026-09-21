@@ -1,5 +1,6 @@
 import { ListModelCredentialsResponseSchema, ModelCredentialWriteSchema } from "@vork/contracts";
 import type { FastifyInstance } from "fastify";
+import { z } from "zod";
 import type { ApiDependencies } from "../app.js";
 import { stubModelCredentials } from "../services/manage-stubs.js";
 
@@ -28,7 +29,9 @@ async function presentCredentials(dependencies: ApiDependencies, userId: string)
         mode: "remote",
         modeLabel: "远程",
         configured: true,
-        summary: `密钥 ${masked}${stored.baseUrl ? ` · ${stored.baseUrl}` : ""}`
+        summary: `密钥 ${masked}${stored.baseUrl ? ` · ${stored.baseUrl}` : ""}`,
+        baseUrl: stored.baseUrl ?? undefined,
+        model: stored.model ?? undefined
       }
     ]
   });
@@ -46,6 +49,15 @@ export function registerCredentialRoutes(app: FastifyInstance, dependencies: Api
       baseUrl: body.baseUrl,
       model: body.model
     });
+    return presentCredentials(dependencies, request.userId);
+  });
+
+  app.delete("/v1/credentials", async (request) => {
+    const body = z
+      .object({ provider: z.literal("openai-compatible").default("openai-compatible") })
+      .default({})
+      .parse(request.body ?? {});
+    await dependencies.repositories.deleteModelCredential(request.userId, body.provider);
     return presentCredentials(dependencies, request.userId);
   });
 }

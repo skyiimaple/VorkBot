@@ -72,7 +72,9 @@ export const ModelCredentialSchema = z.object({
   mode: ModelCredentialModeSchema,
   modeLabel: TrimmedTextSchema,
   configured: z.boolean(),
-  summary: z.string()
+  summary: z.string(),
+  baseUrl: z.string().optional(),
+  model: z.string().optional()
 });
 
 export const ListModelCredentialsResponseSchema = z.object({

@@ -177,6 +177,7 @@ function slotIdFromPayload(payload: unknown): string | undefined {
 }
 
 function taskStatusFor(type: string): Task["status"] | undefined {
+  if (type === "task.queued") return "queued";
   if (type === "task.running") return "running";
   if (type === "approval.request") return "waiting_approval";
   if (type === "task.completed") return "completed";
