@@ -4,6 +4,7 @@ import { LeaseExpiredError } from "../slots/lease-manager.js";
 import {
   BrowserKindError,
   BrowserService,
+  BrowserUnavailableError,
   HumanControlActiveError,
   StaleElementRefError,
   isBrowserServiceError
@@ -44,6 +45,9 @@ function sendBrowserError(
   }
   if (error instanceof HumanControlActiveError) {
     return reply.code(403).send({ code: error.code });
+  }
+  if (error instanceof BrowserUnavailableError) {
+    return reply.code(503).send({ code: error.code });
   }
   throw error;
 }

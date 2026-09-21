@@ -38,8 +38,8 @@ describe("runBrowserTask", () => {
       title: "Vork Browser Test",
       loadState: "loaded" as const,
       elements: [
-        { ref: "el_1", role: "button", name: "Click me", tag: "button" },
-        { ref: "el_2", tag: "input", name: "Type here" }
+        { ref: "el_1", role: "button", name: "Click me", tag: "button", testId: "demo-action" },
+        { ref: "el_2", tag: "input", name: "Type here", testId: "demo-input" }
       ],
       consoleErrors: [] as string[]
     };

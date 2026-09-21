@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { LeaseManager } from "./lease-manager.js";
 
 describe("LeaseManager", () => {
@@ -59,5 +59,27 @@ describe("LeaseManager", () => {
       code: "memory_pressure"
     });
     expect(mgr.acquire({ taskId: "f1", botId: "bot", kind: "file" })).toMatchObject({ slotId: "slot_1" });
+  });
+
+  it("notifies onExpired when an expired lease is reclaimed", async () => {
+    const onExpired = vi.fn();
+    const mgr = new LeaseManager({ maxSlots: 1, ttlMs: 10, onExpired });
+    const lease = mgr.acquire({ taskId: "t1", botId: "b1", kind: "browser" });
+    expect(lease).toMatchObject({ slotId: "slot_1" });
+    if ("code" in lease) {
+      throw new Error("expected slot lease");
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 15));
+    expect(() => mgr.assertActive(lease.leaseId)).toThrow(/lease_expired/);
+    expect(onExpired).toHaveBeenCalledWith({
+      leaseId: lease.leaseId,
+      slotId: "slot_1",
+      kind: "browser"
+    });
+
+    expect(mgr.acquire({ taskId: "t2", botId: "b1", kind: "file" })).toMatchObject({
+      slotId: "slot_1"
+    });
   });
 });

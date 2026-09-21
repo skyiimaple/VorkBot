@@ -68,4 +68,33 @@ describe("TaskEventStream", () => {
     expect(error).toBeDefined();
     expect(writes).toEqual([]);
   });
+
+  it("ends the writer after delivering a terminal task event", async () => {
+    const terminalEvent = {
+      id: "event_1",
+      taskId: "task_1",
+      userId: "user_local",
+      sequence: 1,
+      type: "task.failed",
+      payload: { errorCode: "MODEL_UNAVAILABLE" },
+      createdAt: "2026-09-15T00:00:00.000Z"
+    } as TaskEvent;
+    const subscribe = vi.fn(async () => ({ close: async () => undefined }));
+    const end = vi.fn();
+    const writes: string[] = [];
+    const stream = new TaskEventStream(
+      { listTaskEvents: async () => [terminalEvent] },
+      { subscribe },
+      { write: (chunk) => (writes.push(chunk), true), end },
+      "task_1",
+      0
+    );
+
+    await stream.open();
+
+    expect(writes).toHaveLength(1);
+    expect(writes[0]).toContain("event: task.failed");
+    expect(end).toHaveBeenCalledOnce();
+    expect(subscribe).not.toHaveBeenCalled();
+  });
 });

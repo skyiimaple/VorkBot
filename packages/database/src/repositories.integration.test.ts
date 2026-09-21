@@ -164,6 +164,28 @@ describe("repositories", () => {
     expect(await repos.listTaskEvents(task.id, 0)).toHaveLength(1);
   });
 
+  it("cancels a running task exactly once", async () => {
+    const bot = await repos.createBot({ userId: "user_local", name: "取消 Bot", persona: "测试取消" });
+    const conversation = await repos.createConversation({ userId: "user_local", botId: bot.id });
+    const queued = await repos.createQueuedMessageTask({
+      userId: "user_local",
+      botId: bot.id,
+      conversationId: conversation.id,
+      content: "取消我"
+    });
+    await repos.appendTaskEvent({ taskId: queued.task.id, type: "task.running", payload: {} });
+
+    const cancelled = await repos.cancelTask(queued.task.id);
+    expect(cancelled.status).toBe("cancelled");
+    await expect(repos.cancelTask(queued.task.id)).resolves.toMatchObject({ status: "cancelled" });
+    await expect(repos.failTask(queued.task.id, "MODEL_UNAVAILABLE")).rejects.toThrow("Terminal tasks cannot be failed again");
+    expect((await repos.listTaskEvents(queued.task.id, 0)).map((event) => event.type)).toEqual([
+      "task.queued",
+      "task.running",
+      "task.cancelled"
+    ]);
+  });
+
   it("rejects task references crossing users or conversations", async () => {
     const aliceBot = await repos.createBot({ userId: "user_alice", name: "Alice Bot", persona: "Alice" });
     const aliceConversation = await repos.createConversation({ userId: "user_alice", botId: aliceBot.id });
@@ -217,6 +239,37 @@ describe("repositories", () => {
     expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
     const events = await repos.listTaskEvents(task.id, 0);
     expect(events.filter((event) => event.type === "task.completed" || event.type === "task.failed")).toHaveLength(1);
+  });
+
+  it("lists tasks for a user newest-first with message previews", async () => {
+    const bot = await repos.createBot({ userId: "user_local", name: "列表 Bot", persona: "测试任务列表" });
+    const conversation = await repos.createConversation({ userId: "user_local", botId: bot.id });
+    const first = await repos.createQueuedMessageTask({
+      userId: "user_local",
+      botId: bot.id,
+      conversationId: conversation.id,
+      content: "第一条"
+    });
+    const second = await repos.createQueuedMessageTask({
+      userId: "user_local",
+      botId: bot.id,
+      conversationId: conversation.id,
+      content: "[browser-demo]"
+    });
+    await repos.createBot({ userId: "user_other", name: "他人 Bot", persona: "隔离" }).then(async (otherBot) => {
+      const otherConversation = await repos.createConversation({ userId: "user_other", botId: otherBot.id });
+      await repos.createQueuedMessageTask({
+        userId: "user_other",
+        botId: otherBot.id,
+        conversationId: otherConversation.id,
+        content: "不应出现"
+      });
+    });
+
+    const listed = await repos.listTasks("user_local");
+    expect(listed.map((item) => item.task.id)).toEqual([second.task.id, first.task.id]);
+    expect(listed.map((item) => item.messageContent)).toEqual(["[browser-demo]", "第一条"]);
+    await expect(repos.listTasks("   ")).rejects.toMatchObject({ name: "ZodError" });
   });
 
   it("rolls back a sequence increment when event serialization fails", async () => {

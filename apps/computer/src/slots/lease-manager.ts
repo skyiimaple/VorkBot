@@ -23,11 +23,18 @@ type LeaseRecord = {
   expiresAt: Date;
 };
 
+export type ExpiredLeaseInfo = {
+  leaseId: string;
+  slotId: string;
+  kind: AcquireSlotInput["kind"];
+};
+
 export type LeaseManagerOptions = {
   maxSlots: number;
   maxBrowserSlots?: number;
   ttlMs?: number;
   isMemoryPressure?: MemoryPressureReader;
+  onExpired?: (info: ExpiredLeaseInfo) => void;
 };
 
 function isComputerError(result: SlotLease | ComputerError | void): result is ComputerError {
@@ -39,6 +46,7 @@ export class LeaseManager {
   readonly #maxBrowserSlots: number;
   readonly #ttlMs: number;
   readonly #isMemoryPressure: MemoryPressureReader;
+  readonly #onExpired?: (info: ExpiredLeaseInfo) => void;
   readonly #leases = new Map<string, LeaseRecord>();
   readonly #slotToLeaseId = new Map<string, string>();
 
@@ -47,6 +55,7 @@ export class LeaseManager {
     this.#maxBrowserSlots = options.maxBrowserSlots ?? DEFAULT_MAX_BROWSER_SLOTS;
     this.#ttlMs = options.ttlMs ?? DEFAULT_TTL_MS;
     this.#isMemoryPressure = options.isMemoryPressure ?? (() => false);
+    this.#onExpired = options.onExpired;
   }
 
   acquire(input: AcquireSlotInput): SlotLease | ComputerError {
@@ -86,6 +95,7 @@ export class LeaseManager {
   heartbeat(leaseId: string): void | ComputerError {
     const record = this.#leases.get(leaseId);
     if (!record || this.#isExpired(record)) {
+      this.#dropExpired(leaseId, record);
       return { code: "lease_expired" };
     }
 
@@ -114,6 +124,7 @@ export class LeaseManager {
   assertActive(leaseId: string): SlotLease & { botId: string; taskId: string; kind: LeaseRecord["kind"] } {
     const record = this.#leases.get(leaseId);
     if (!record || this.#isExpired(record)) {
+      this.#dropExpired(leaseId, record);
       throw new LeaseExpiredError();
     }
 
@@ -146,9 +157,10 @@ export class LeaseManager {
 
       const record = this.#leases.get(activeLeaseId);
       if (!record || this.#isExpired(record)) {
-        this.#slotToLeaseId.delete(slotId);
         if (record) {
-          this.#leases.delete(activeLeaseId);
+          this.#dropExpired(activeLeaseId, record);
+        } else {
+          this.#slotToLeaseId.delete(slotId);
         }
         return slotId;
       }
@@ -158,14 +170,28 @@ export class LeaseManager {
   }
 
   #purgeExpiredSlots(): void {
-    for (const [slotId, leaseId] of this.#slotToLeaseId.entries()) {
+    for (const [slotId, leaseId] of [...this.#slotToLeaseId.entries()]) {
       const record = this.#leases.get(leaseId);
       if (!record || this.#isExpired(record)) {
-        this.#slotToLeaseId.delete(slotId);
         if (record) {
-          this.#leases.delete(leaseId);
+          this.#dropExpired(leaseId, record);
+        } else {
+          this.#slotToLeaseId.delete(slotId);
         }
       }
+    }
+  }
+
+  #dropExpired(leaseId: string, record: LeaseRecord | undefined): void {
+    if (!record) {
+      return;
+    }
+    const hadLease = this.#leases.delete(leaseId);
+    if (this.#slotToLeaseId.get(record.slotId) === leaseId) {
+      this.#slotToLeaseId.delete(record.slotId);
+    }
+    if (hadLease) {
+      this.#onExpired?.({ leaseId, slotId: record.slotId, kind: record.kind });
     }
   }
 

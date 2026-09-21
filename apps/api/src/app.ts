@@ -5,8 +5,16 @@ import { registerRequestContext } from "./plugins/request-context.js";
 import { registerBotRoutes } from "./routes/bots.js";
 import { registerComputerRoutes, type ComputerProxyOptions } from "./routes/computer.js";
 import { registerConversationRoutes } from "./routes/conversations.js";
+import { registerCredentialRoutes } from "./routes/credentials.js";
+import { registerWorkspaceFileRoutes } from "./routes/files.js";
+import { registerSkillRoutes } from "./routes/skills.js";
+import { registerTaskListRoutes } from "./routes/tasks.js";
 import type { TaskQueue } from "./services/chat-service.js";
-import { RedisTaskEventSubscriber, type TaskEventSubscriber } from "./services/event-stream.js";
+import {
+  RedisTaskEventSubscriber,
+  type TaskEventPublisher,
+  type TaskEventSubscriber
+} from "./services/event-stream.js";
 import { registerTaskEventRoutes } from "./routes/task-events.js";
 
 const ErrorResponseSchema = z.object({ error: z.string().min(1) });
@@ -15,6 +23,7 @@ export type ApiDependencies = {
   repositories: Repositories;
   queue: TaskQueue;
   eventSubscriber?: TaskEventSubscriber;
+  taskEventPublisher?: TaskEventPublisher;
   userId?: string;
   computer?: ComputerProxyOptions;
 };
@@ -26,7 +35,11 @@ export function buildApp(dependencies: ApiDependencies): FastifyInstance {
   registerRequestContext(app, dependencies.userId);
   registerBotRoutes(app, routeDependencies);
   registerConversationRoutes(app, routeDependencies);
+  registerTaskListRoutes(app, routeDependencies);
   registerTaskEventRoutes(app, routeDependencies);
+  registerSkillRoutes(app);
+  registerWorkspaceFileRoutes(app);
+  registerCredentialRoutes(app);
   if (dependencies.computer) {
     registerComputerRoutes(app, routeDependencies, dependencies.computer);
   }

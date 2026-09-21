@@ -63,6 +63,15 @@ export type FileServiceOptions = {
   leaseManager: LeaseManager;
 };
 
+function isEnoent(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    (error as { code?: unknown }).code === "ENOENT"
+  );
+}
+
 export class FileService {
   readonly #workspaceRoot: string;
   readonly #leaseManager: LeaseManager;
@@ -81,7 +90,15 @@ export class FileService {
     const lease = this.#assertLease(input.leaseId);
     const relativePath = input.path ?? ".";
     const absolutePath = this.#resolvePath(lease.botId, relativePath, input.root ?? "bot");
-    const entries = await readdir(absolutePath, { withFileTypes: true });
+    let entries;
+    try {
+      entries = await readdir(absolutePath, { withFileTypes: true });
+    } catch (error) {
+      if (isEnoent(error)) {
+        return { entries: [] };
+      }
+      throw error;
+    }
     return {
       entries: await Promise.all(
         entries.map(async (entry) => {
@@ -102,7 +119,15 @@ export class FileService {
   }): Promise<FileStatResult> {
     const lease = this.#assertLease(input.leaseId);
     const absolutePath = this.#resolvePath(lease.botId, input.path, input.root ?? "bot");
-    const fileStat = await stat(absolutePath);
+    let fileStat;
+    try {
+      fileStat = await stat(absolutePath);
+    } catch (error) {
+      if (isEnoent(error)) {
+        throw new FileNotFoundError();
+      }
+      throw error;
+    }
     return {
       path: input.path,
       type: fileStat.isDirectory() ? "directory" : "file",
@@ -119,7 +144,15 @@ export class FileService {
   }): Promise<FileReadResult> {
     const lease = this.#assertLease(input.leaseId);
     const absolutePath = this.#resolvePath(lease.botId, input.path, input.root ?? "bot");
-    const fileStat = await stat(absolutePath);
+    let fileStat;
+    try {
+      fileStat = await stat(absolutePath);
+    } catch (error) {
+      if (isEnoent(error)) {
+        throw new FileNotFoundError();
+      }
+      throw error;
+    }
     if (!fileStat.isFile()) {
       throw new FileNotFoundError();
     }

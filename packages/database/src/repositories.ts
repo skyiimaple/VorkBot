@@ -10,6 +10,7 @@ import {
   ListConversationsInputSchema,
   ListBotsInputSchema,
   ListMessagesInputSchema,
+  ListTasksInputSchema,
   MessageSchema,
   QueuedMessageTaskResultSchema
 } from "@vork/contracts";
@@ -103,6 +104,11 @@ export type AppendTaskEventRepositoryInput = {
 export type CompleteTaskWithMessageRepositoryInput = {
   taskId: string;
   content: string;
+};
+
+export type TaskWithMessagePreview = {
+  task: Task;
+  messageContent: string;
 };
 
 export type Repositories = ReturnType<typeof createRepositories>;
@@ -367,6 +373,32 @@ export function createRepositories(options: DatabaseClientOptions = {}) {
       return rows[0] ? toTask(rows[0]) : null;
     },
 
+    async listTasks(userId: string, limit = 50): Promise<TaskWithMessagePreview[]> {
+      const input = ListTasksInputSchema.parse({ userId, limit });
+      const rows = await sql<(TaskRow & { message_content: string })[]>`
+        SELECT
+          tasks.id,
+          tasks.user_id,
+          tasks.bot_id,
+          tasks.conversation_id,
+          tasks.message_id,
+          tasks.status,
+          tasks.last_event_sequence,
+          tasks.created_at,
+          tasks.updated_at,
+          messages.content AS message_content
+        FROM tasks
+        INNER JOIN messages ON messages.id = tasks.message_id
+        WHERE tasks.user_id = ${input.userId}
+        ORDER BY tasks.updated_at DESC, tasks.created_at DESC
+        LIMIT ${input.limit ?? 50}
+      `;
+      return rows.map((row) => ({
+        task: toTask(row),
+        messageContent: row.message_content
+      }));
+    },
+
     async appendTaskEvent(input: AppendTaskEventRepositoryInput): Promise<TaskEvent> {
       return sql.begin(async (transaction) => {
         const taskRows = await transaction<TaskRow[]>`
@@ -433,6 +465,35 @@ export function createRepositories(options: DatabaseClientOptions = {}) {
           VALUES (${id("event")}, ${task.id}, ${task.user_id}, ${sequence}, 'task.failed', ${JSON.stringify({ errorCode })}::jsonb, ${now})
         `;
         return toTask(required(updatedRows, "Task could not be failed"));
+      });
+    },
+
+    async cancelTask(taskId: string): Promise<Task> {
+      return sql.begin(async (transaction) => {
+        const taskRows = await transaction<TaskRow[]>`
+          SELECT id, user_id, bot_id, conversation_id, message_id, status, last_event_sequence, created_at, updated_at
+          FROM tasks WHERE id = ${taskId} FOR UPDATE
+        `;
+        const task = required(taskRows, "Task does not exist");
+        if (task.status === "cancelled") {
+          return toTask(task);
+        }
+        if (terminalTaskStatuses.includes(task.status)) {
+          throw new Error("Terminal tasks cannot be cancelled");
+        }
+        const sequence = task.last_event_sequence + 1;
+        const now = new Date().toISOString();
+        const updatedRows = await transaction<TaskRow[]>`
+          UPDATE tasks
+          SET status = 'cancelled', last_event_sequence = ${sequence}, updated_at = ${now}
+          WHERE id = ${task.id}
+          RETURNING id, user_id, bot_id, conversation_id, message_id, status, last_event_sequence, created_at, updated_at
+        `;
+        await transaction`
+          INSERT INTO task_events (id, task_id, user_id, sequence, type, payload, created_at)
+          VALUES (${id("event")}, ${task.id}, ${task.user_id}, ${sequence}, 'task.cancelled', ${JSON.stringify({})}::jsonb, ${now})
+        `;
+        return toTask(required(updatedRows, "Task could not be cancelled"));
       });
     },
 

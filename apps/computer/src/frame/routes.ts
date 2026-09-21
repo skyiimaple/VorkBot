@@ -23,13 +23,17 @@ export function registerFrameRoutes(
       if (lease.slotId !== slotId) {
         return reply.code(404).send({ code: "slot_not_found" });
       }
-
-      const session = options.sessions.get(slotId);
-      if (!session) {
+      if (lease.kind !== "browser") {
         return reply.code(404).send({ code: "browser_unavailable" });
       }
 
+      const session = options.sessions.getOrCreate(slotId);
+      await session.start();
       const frame = await session.captureFrame();
+      if (!frame || frame.byteLength === 0) {
+        return reply.code(404).send({ code: "frame_unavailable" });
+      }
+
       return reply
         .code(200)
         .header("content-type", "image/jpeg")
@@ -39,7 +43,10 @@ export function registerFrameRoutes(
       if (error instanceof LeaseExpiredError) {
         return reply.code(409).send({ code: error.code });
       }
-      throw error;
+      if (error instanceof Error && error.message === "browser_unavailable") {
+        return reply.code(404).send({ code: "browser_unavailable" });
+      }
+      return reply.code(503).send({ code: "frame_unavailable" });
     }
   });
 }

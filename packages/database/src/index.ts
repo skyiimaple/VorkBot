@@ -8,6 +8,7 @@ export type {
   CreateConversationRepositoryInput,
   CreateQueuedMessageTaskRepositoryInput,
   CreateTaskRepositoryInput,
-  Repositories
+  Repositories,
+  TaskWithMessagePreview
 } from "./repositories.js";
 export * from "./schema.js";

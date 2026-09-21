@@ -3,6 +3,7 @@ import { TaskEventSchema, type TaskEvent } from "@vork/contracts";
 import type { Repositories } from "@vork/database";
 
 const HEARTBEAT_INTERVAL_MS = 20_000;
+const TERMINAL_TASK_EVENT_TYPES = new Set(["task.completed", "task.failed", "task.cancelled"]);
 
 export type TaskEventSubscription = {
   close(): Promise<void>;
@@ -12,12 +13,21 @@ export type TaskEventSubscriber = {
   subscribe(taskId: string, onNotification: () => void): Promise<TaskEventSubscription>;
 };
 
+export type TaskEventPublisher = {
+  publish(taskId: string): Promise<void>;
+};
+
 export type EventStreamWriter = {
   write(chunk: string): boolean;
+  end?: () => void;
 };
 
 export function taskEventChannel(taskId: string): string {
   return `vork:tasks:${taskId}:events`;
+}
+
+export function isTerminalTaskEventType(type: string): boolean {
+  return TERMINAL_TASK_EVENT_TYPES.has(type);
 }
 
 export class RedisTaskEventSubscriber implements TaskEventSubscriber {
@@ -48,6 +58,19 @@ export class RedisTaskEventSubscriber implements TaskEventSubscriber {
         }
       }
     };
+  }
+}
+
+export class RedisTaskEventPublisher implements TaskEventPublisher {
+  constructor(private readonly redisUrl: string) {}
+
+  async publish(taskId: string): Promise<void> {
+    const redis = new Redis(this.redisUrl);
+    try {
+      await redis.publish(taskEventChannel(taskId), JSON.stringify({ taskId }));
+    } finally {
+      redis.disconnect();
+    }
   }
 }
 
@@ -84,7 +107,10 @@ export class TaskEventStream {
     await this.refresh();
     if (!this.closed) {
       this.heartbeat = setInterval(() => {
-        if (!this.closed) this.writer.write(": heartbeat\n\n");
+        if (this.closed) return;
+        this.writer.write(": heartbeat\n\n");
+        // 心跳顺带从库对齐，避免仅依赖 Redis 唤醒时漏事件（如 API 侧取消）。
+        void this.enqueueRefresh().catch(() => void this.close());
       }, HEARTBEAT_INTERVAL_MS);
     }
   }
@@ -110,6 +136,11 @@ export class TaskEventStream {
       if (event.sequence <= this.lastSequence) continue;
       this.writer.write(serializeTaskEvent(event));
       this.lastSequence = event.sequence;
+      if (isTerminalTaskEventType(event.type)) {
+        await this.close();
+        this.writer.end?.();
+        return;
+      }
     }
   }
 }

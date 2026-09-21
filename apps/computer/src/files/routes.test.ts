@@ -110,4 +110,26 @@ describe("file routes", () => {
 
     await shortTtlApp.close();
   });
+
+  it("returns empty entries for a new bot workspace", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: "/v1/files/list",
+      headers: { authorization: "Bearer test-token" },
+      payload: { leaseId: activeLeaseId }
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ entries: [] });
+  });
+
+  it("returns not_found for missing files", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: "/v1/files/read",
+      headers: { authorization: "Bearer test-token" },
+      payload: { leaseId: activeLeaseId, path: "missing.txt" }
+    });
+    expect(res.statusCode).toBe(404);
+    expect(res.json().code).toBe("not_found");
+  });
 });

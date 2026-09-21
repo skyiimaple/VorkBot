@@ -11,6 +11,8 @@
     "test": "pnpm -r --filter '!@vork/e2e' test",
     "e2e": "pnpm --filter @vork/e2e test",
     "healthcheck": "node scripts/dev-healthcheck.mjs",
+    "smoke": "node scripts/dev-smoke.mjs",
+    "ui:check": "node scripts/ui-parity/check.mjs",
     "typecheck": "pnpm -r typecheck",
     "lint": "pnpm -r lint"
   },

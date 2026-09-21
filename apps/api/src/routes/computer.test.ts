@@ -64,4 +64,86 @@ describe("computer frame proxy", () => {
       }
     });
   });
+
+  it("returns 404 after the slot lease was released", async () => {
+    const bot = await repos.createBot({ userId: "user_local", name: "Released Bot", persona: "画面" });
+    const conversation = await repos.createConversation({ userId: "user_local", botId: bot.id });
+    const queued = await repos.createQueuedMessageTask({
+      userId: "user_local",
+      botId: bot.id,
+      conversationId: conversation.id,
+      content: "[browser-demo]"
+    });
+    await repos.appendTaskEvent({
+      taskId: queued.task.id,
+      type: "slot.acquired",
+      payload: { slotId: "slot_1", leaseId: "lease_1" }
+    });
+    await repos.appendTaskEvent({
+      taskId: queued.task.id,
+      type: "slot.released",
+      payload: { leaseId: "lease_1" }
+    });
+
+    const fetchMock = vi.fn();
+    const app = buildApp({
+      repositories: repos,
+      queue: { publish: async () => undefined },
+      computer: {
+        baseUrl: "http://computer:8080",
+        token: "secret",
+        fetch: fetchMock
+      }
+    });
+
+    const response = await app.inject({
+      method: "GET",
+      url: `/v1/computer/slots/slot_1/frame?taskId=${encodeURIComponent(queued.task.id)}`
+    });
+
+    expect(response.statusCode).toBe(404);
+    expect(response.json()).toEqual({ error: "Slot lease not found" });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("returns 404 when upstream frame is empty", async () => {
+    const bot = await repos.createBot({ userId: "user_local", name: "Empty Frame Bot", persona: "画面" });
+    const conversation = await repos.createConversation({ userId: "user_local", botId: bot.id });
+    const queued = await repos.createQueuedMessageTask({
+      userId: "user_local",
+      botId: bot.id,
+      conversationId: conversation.id,
+      content: "[browser-demo]"
+    });
+    await repos.appendTaskEvent({
+      taskId: queued.task.id,
+      type: "slot.acquired",
+      payload: { slotId: "slot_1", leaseId: "lease_1" }
+    });
+
+    const fetchMock = vi.fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>(async () =>
+      new Response(Buffer.alloc(0), {
+        status: 200,
+        headers: { "content-type": "image/jpeg" }
+      })
+    );
+
+    const app = buildApp({
+      repositories: repos,
+      queue: { publish: async () => undefined },
+      computer: {
+        baseUrl: "http://computer:8080",
+        token: "secret",
+        fetch: fetchMock
+      }
+    });
+
+    const response = await app.inject({
+      method: "GET",
+      url: `/v1/computer/slots/slot_1/frame?taskId=${encodeURIComponent(queued.task.id)}`
+    });
+
+    expect(response.statusCode).toBe(404);
+    expect(response.json()).toEqual({ error: "Frame unavailable" });
+  });
 });

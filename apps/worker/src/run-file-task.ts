@@ -6,8 +6,10 @@ import {
 import type { Job } from "bullmq";
 import type { Repositories } from "@vork/database";
 import type { ComputerClientLike } from "./computer-client.js";
+import { appendToolFailed, failComputerTask } from "./computer-task-errors.js";
 import type { TaskNotifier } from "./queue.js";
 import { retryOrFailSlotWait, toSlotWaitError } from "./slot-retry.js";
+import { assertTaskStillActive } from "./task-guard.js";
 
 const FILE_DEMO_MARKER = "[file-demo]";
 const DEMO_WRITE_PATH = "notes/hello.txt";
@@ -41,6 +43,7 @@ export async function runFileTask(rawJob: TaskJob, deps: RunFileTaskDependencies
 
   let leaseId: string | undefined;
   let heartbeatTimer: ReturnType<typeof setInterval> | undefined;
+  let activeTool: string | undefined;
 
   try {
     let lease;
@@ -55,6 +58,7 @@ export async function runFileTask(rawJob: TaskJob, deps: RunFileTaskDependencies
     }
 
     leaseId = lease.leaseId;
+    if (!(await assertTaskStillActive(deps.repos, task.id))) return;
     if (task.status !== "running") {
       await deps.repos.appendTaskEvent({ taskId: task.id, type: "task.running", payload: {} });
       await notify(deps.notifier, task.id);
@@ -71,10 +75,12 @@ export async function runFileTask(rawJob: TaskJob, deps: RunFileTaskDependencies
       void deps.computer.heartbeat(lease.leaseId).catch(() => {});
     }, HEARTBEAT_INTERVAL_MS);
 
+    if (!(await assertTaskStillActive(deps.repos, task.id))) return;
+    activeTool = "file.write";
     await deps.repos.appendTaskEvent({
       taskId: task.id,
       type: TOOL_EVENT_TYPES.STARTED,
-      payload: { toolName: "file.write", path: DEMO_WRITE_PATH }
+      payload: { toolName: activeTool, path: DEMO_WRITE_PATH }
     });
     await notify(deps.notifier, task.id);
 
@@ -82,14 +88,17 @@ export async function runFileTask(rawJob: TaskJob, deps: RunFileTaskDependencies
     await deps.repos.appendTaskEvent({
       taskId: task.id,
       type: TOOL_EVENT_TYPES.FINISHED,
-      payload: { toolName: "file.write", path: written.path, bytes: written.bytes }
+      payload: { toolName: activeTool, path: written.path, bytes: written.bytes }
     });
     await notify(deps.notifier, task.id);
+    activeTool = undefined;
 
+    if (!(await assertTaskStillActive(deps.repos, task.id))) return;
+    activeTool = "file.read";
     await deps.repos.appendTaskEvent({
       taskId: task.id,
       type: TOOL_EVENT_TYPES.STARTED,
-      payload: { toolName: "file.read", path: DEMO_WRITE_PATH }
+      payload: { toolName: activeTool, path: DEMO_WRITE_PATH }
     });
     await notify(deps.notifier, task.id);
 
@@ -98,14 +107,16 @@ export async function runFileTask(rawJob: TaskJob, deps: RunFileTaskDependencies
       taskId: task.id,
       type: TOOL_EVENT_TYPES.FINISHED,
       payload: {
-        toolName: "file.read",
+        toolName: activeTool,
         path: read.path,
         bytes: read.bytes,
         truncated: read.truncated
       }
     });
     await notify(deps.notifier, task.id);
+    activeTool = undefined;
 
+    if (!(await assertTaskStillActive(deps.repos, task.id))) return;
     if (heartbeatTimer) {
       clearInterval(heartbeatTimer);
       heartbeatTimer = undefined;
@@ -128,8 +139,10 @@ export async function runFileTask(rawJob: TaskJob, deps: RunFileTaskDependencies
     const latestTask = await deps.repos.getTask(task.id);
     if (!latestTask || terminalStatuses.has(latestTask.status)) return;
     try {
-      await deps.repos.failTask(task.id, "COMPUTER_UNAVAILABLE");
-      await notify(deps.notifier, task.id);
+      if (activeTool) {
+        await appendToolFailed(task.id, activeTool, error, deps);
+      }
+      await failComputerTask(task.id, error, deps);
     } catch {
       // A concurrent worker may have reached a terminal state while handling this job.
     }

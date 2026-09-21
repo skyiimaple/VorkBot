@@ -6,12 +6,16 @@ import {
 import type { Job } from "bullmq";
 import type { Repositories } from "@vork/database";
 import type { ComputerClientLike, ObserveResult } from "./computer-client.js";
+import { appendToolFailed, failComputerTask } from "./computer-task-errors.js";
 import type { TaskNotifier } from "./queue.js";
 import { retryOrFailSlotWait, toSlotWaitError } from "./slot-retry.js";
+import { assertTaskStillActive } from "./task-guard.js";
 
 const BROWSER_DEMO_MARKER = "[browser-demo]";
 const DEMO_TEST_PAGE_URL = "file:///app/public/test-page/index.html";
 const DEMO_TYPE_TEXT = "hello from vork";
+const DEMO_BUTTON_TEST_ID = "demo-action";
+const DEMO_INPUT_TEST_ID = "demo-input";
 const HEARTBEAT_INTERVAL_MS = 15_000;
 
 type RunBrowserTaskDependencies = {
@@ -35,12 +39,17 @@ export function isBrowserDemoMessage(content: string): boolean {
   return content.includes(BROWSER_DEMO_MARKER);
 }
 
-function findElement(observed: ObserveResult, matcher: (element: ObserveResult["elements"][number]) => boolean): string {
-  const element = observed.elements.find(matcher);
-  if (!element) {
-    throw new Error("element_not_found");
+function findElement(
+  observed: ObserveResult,
+  matchers: Array<(element: ObserveResult["elements"][number]) => boolean>
+): string {
+  for (const matcher of matchers) {
+    const element = observed.elements.find(matcher);
+    if (element) {
+      return element.ref;
+    }
   }
-  return element.ref;
+  throw new Error("element_not_found");
 }
 
 export async function runBrowserTask(rawJob: TaskJob, deps: RunBrowserTaskDependencies): Promise<void> {
@@ -49,6 +58,7 @@ export async function runBrowserTask(rawJob: TaskJob, deps: RunBrowserTaskDepend
 
   let leaseId: string | undefined;
   let heartbeatTimer: ReturnType<typeof setInterval> | undefined;
+  let activeTool: string | undefined;
 
   try {
     let lease;
@@ -63,6 +73,7 @@ export async function runBrowserTask(rawJob: TaskJob, deps: RunBrowserTaskDepend
     }
 
     leaseId = lease.leaseId;
+    if (!(await assertTaskStillActive(deps.repos, task.id))) return;
     if (task.status !== "running") {
       await deps.repos.appendTaskEvent({ taskId: task.id, type: "task.running", payload: {} });
       await notify(deps.notifier, task.id);
@@ -79,64 +90,83 @@ export async function runBrowserTask(rawJob: TaskJob, deps: RunBrowserTaskDepend
       void deps.computer.heartbeat(lease.leaseId).catch(() => {});
     }, HEARTBEAT_INTERVAL_MS);
 
+    if (!(await assertTaskStillActive(deps.repos, task.id))) return;
+    activeTool = "browser.navigate";
     await deps.repos.appendTaskEvent({
       taskId: task.id,
       type: TOOL_EVENT_TYPES.STARTED,
-      payload: { toolName: "browser.navigate", reason: DEMO_TEST_PAGE_URL }
+      payload: { toolName: activeTool, reason: DEMO_TEST_PAGE_URL }
     });
     await notify(deps.notifier, task.id);
     await deps.computer.navigate(lease.leaseId, DEMO_TEST_PAGE_URL);
     await deps.repos.appendTaskEvent({
       taskId: task.id,
       type: TOOL_EVENT_TYPES.FINISHED,
-      payload: { toolName: "browser.navigate", reason: DEMO_TEST_PAGE_URL }
+      payload: { toolName: activeTool, reason: DEMO_TEST_PAGE_URL }
     });
     await notify(deps.notifier, task.id);
+    activeTool = undefined;
 
+    if (!(await assertTaskStillActive(deps.repos, task.id))) return;
+    activeTool = "browser.observe";
     await deps.repos.appendTaskEvent({
       taskId: task.id,
       type: TOOL_EVENT_TYPES.STARTED,
-      payload: { toolName: "browser.observe" }
+      payload: { toolName: activeTool }
     });
     await notify(deps.notifier, task.id);
     const observed = await deps.computer.observe(lease.leaseId);
     await deps.repos.appendTaskEvent({
       taskId: task.id,
       type: TOOL_EVENT_TYPES.FINISHED,
-      payload: { toolName: "browser.observe", reason: observed.title }
+      payload: { toolName: activeTool, reason: observed.title }
     });
     await notify(deps.notifier, task.id);
+    activeTool = undefined;
 
-    const buttonRef = findElement(observed, (element) => element.tag === "button" || element.role === "button");
+    const buttonRef = findElement(observed, [
+      (element) => element.testId === DEMO_BUTTON_TEST_ID,
+      (element) => element.tag === "button" || element.role === "button"
+    ]);
+    if (!(await assertTaskStillActive(deps.repos, task.id))) return;
+    activeTool = "browser.click";
     await deps.repos.appendTaskEvent({
       taskId: task.id,
       type: TOOL_EVENT_TYPES.STARTED,
-      payload: { toolName: "browser.click", reason: buttonRef }
+      payload: { toolName: activeTool, reason: buttonRef }
     });
     await notify(deps.notifier, task.id);
     await deps.computer.click(lease.leaseId, buttonRef);
     await deps.repos.appendTaskEvent({
       taskId: task.id,
       type: TOOL_EVENT_TYPES.FINISHED,
-      payload: { toolName: "browser.click", reason: buttonRef }
+      payload: { toolName: activeTool, reason: buttonRef }
     });
     await notify(deps.notifier, task.id);
+    activeTool = undefined;
 
-    const inputRef = findElement(observed, (element) => element.tag === "input");
+    const inputRef = findElement(observed, [
+      (element) => element.testId === DEMO_INPUT_TEST_ID,
+      (element) => element.tag === "input"
+    ]);
+    if (!(await assertTaskStillActive(deps.repos, task.id))) return;
+    activeTool = "browser.type";
     await deps.repos.appendTaskEvent({
       taskId: task.id,
       type: TOOL_EVENT_TYPES.STARTED,
-      payload: { toolName: "browser.type", reason: inputRef }
+      payload: { toolName: activeTool, reason: inputRef }
     });
     await notify(deps.notifier, task.id);
     await deps.computer.type(lease.leaseId, inputRef, DEMO_TYPE_TEXT);
     await deps.repos.appendTaskEvent({
       taskId: task.id,
       type: TOOL_EVENT_TYPES.FINISHED,
-      payload: { toolName: "browser.type", reason: inputRef }
+      payload: { toolName: activeTool, reason: inputRef }
     });
     await notify(deps.notifier, task.id);
+    activeTool = undefined;
 
+    if (!(await assertTaskStillActive(deps.repos, task.id))) return;
     if (heartbeatTimer) {
       clearInterval(heartbeatTimer);
       heartbeatTimer = undefined;
@@ -162,8 +192,10 @@ export async function runBrowserTask(rawJob: TaskJob, deps: RunBrowserTaskDepend
     const latestTask = await deps.repos.getTask(task.id);
     if (!latestTask || terminalStatuses.has(latestTask.status)) return;
     try {
-      await deps.repos.failTask(task.id, "COMPUTER_UNAVAILABLE");
-      await notify(deps.notifier, task.id);
+      if (activeTool) {
+        await appendToolFailed(task.id, activeTool, error, deps);
+      }
+      await failComputerTask(task.id, error, deps);
     } catch {
       // A concurrent worker may have reached a terminal state while handling this job.
     }

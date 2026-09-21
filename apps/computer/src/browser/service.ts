@@ -57,13 +57,13 @@ export class BrowserService {
 
   async observe(input: { leaseId: string }): Promise<ObserveResult> {
     const session = await this.#sessionForLease(input.leaseId);
-    await session.start();
+    await this.#ensureStarted(session);
     return session.observe();
   }
 
   async navigate(input: { leaseId: string; url: string }): Promise<{ url: string }> {
     const session = await this.#sessionForLease(input.leaseId);
-    await session.start();
+    await this.#ensureStarted(session);
     await session.navigate(input.url);
     return { url: input.url };
   }
@@ -72,7 +72,7 @@ export class BrowserService {
     const lease = this.#assertBrowserLease(input.leaseId);
     this.#assertAgentControl(lease.slotId);
     const session = await this.#sessionForLease(input.leaseId);
-    await session.start();
+    await this.#ensureStarted(session);
     try {
       await session.click(input.ref);
     } catch (error) {
@@ -88,7 +88,7 @@ export class BrowserService {
     const lease = this.#assertBrowserLease(input.leaseId);
     this.#assertAgentControl(lease.slotId);
     const session = await this.#sessionForLease(input.leaseId);
-    await session.start();
+    await this.#ensureStarted(session);
     try {
       await session.type(input.ref, input.text);
     } catch (error) {
@@ -102,7 +102,7 @@ export class BrowserService {
 
   async scroll(input: { leaseId: string; deltaY?: number }): Promise<{ deltaY: number }> {
     const session = await this.#sessionForLease(input.leaseId);
-    await session.start();
+    await this.#ensureStarted(session);
     const deltaY = input.deltaY ?? 400;
     await session.scroll(deltaY);
     return { deltaY };
@@ -115,6 +115,17 @@ export class BrowserService {
   async #sessionForLease(leaseId: string) {
     const lease = this.#assertBrowserLease(leaseId);
     return this.#sessions.getOrCreate(lease.slotId);
+  }
+
+  async #ensureStarted(session: { start: () => Promise<void> }): Promise<void> {
+    try {
+      await session.start();
+    } catch (error) {
+      if (error instanceof Error && error.message === "browser_unavailable") {
+        throw new BrowserUnavailableError();
+      }
+      throw new BrowserUnavailableError();
+    }
   }
 
   #assertAgentControl(slotId: string): void {

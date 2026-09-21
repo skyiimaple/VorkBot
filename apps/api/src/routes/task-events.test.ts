@@ -107,7 +107,7 @@ describe("task event routes", () => {
     const response = await app.inject({ method: "GET", url: `/v1/tasks/${queued.task.id}/events?after=0` });
 
     expect(response.statusCode).toBe(404);
-    expect(response.json()).toEqual({ error: "Task not found" });
+    expect(response.json()).toEqual({ error: "任务不存在" });
   });
 
   it("rejects negative, non-numeric, and fractional event cursors", async () => {
@@ -119,5 +119,72 @@ describe("task event routes", () => {
       expect(response.statusCode).toBe(400);
       expect(response.json()).toEqual({ error: "Invalid request" });
     }
+  });
+
+  it("streams a task.failed event that clients can consume", async () => {
+    const task = await seedTaskEvents(["task.queued"]);
+    await repositories.appendTaskEvent({ taskId: task.id, type: "task.running", payload: {} });
+    await repositories.failTask(task.id, "MODEL_UNAVAILABLE");
+
+    const response = await openSse(app, `/v1/tasks/${task.id}/events?after=0`, 3);
+
+    expect(response.events.map((event) => event.event)).toEqual(["task.queued", "task.running", "task.failed"]);
+    expect(response.events[2]?.data).toMatchObject({
+      type: "task.failed",
+      payload: { errorCode: "MODEL_UNAVAILABLE" }
+    });
+  });
+
+  it("ends the SSE body after a terminal event so reconnect clients can stop", async () => {
+    const task = await seedTaskEvents(["task.queued"]);
+    await repositories.appendTaskEvent({ taskId: task.id, type: "task.running", payload: {} });
+    await repositories.failTask(task.id, "MODEL_UNAVAILABLE");
+
+    if (!app.server.address()) {
+      await app.listen({ host: "127.0.0.1", port: 0 });
+    }
+    const address = app.server.address();
+    if (!address || typeof address === "string") throw new Error("SSE test server did not expose a TCP address");
+
+    const response = await fetch(`http://127.0.0.1:${address.port}/v1/tasks/${task.id}/events?after=0`, {
+      headers: { accept: "text/event-stream" }
+    });
+    expect(response.ok).toBe(true);
+    const body = await response.text();
+    expect(body).toContain("event: task.failed");
+    expect(body).not.toContain(": heartbeat");
+  });
+
+  it("cancels a queued task and exposes task.cancelled", async () => {
+    const task = await seedTaskEvents(["task.queued"]);
+    const published: string[] = [];
+    const cancellingApp = buildApp({
+      repositories,
+      queue: { publish: async () => undefined },
+      taskEventPublisher: { publish: async (taskId) => void published.push(taskId) }
+    });
+
+    const response = await cancellingApp.inject({ method: "POST", url: `/v1/tasks/${task.id}/cancel` });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({ task: { id: task.id, status: "cancelled" } });
+    expect(await repositories.getTask(task.id)).toMatchObject({ status: "cancelled" });
+    expect(await repositories.listTaskEvents(task.id, 0)).toMatchObject([
+      { type: "task.queued" },
+      { type: "task.cancelled", payload: {} }
+    ]);
+    expect(published).toEqual([task.id]);
+    await cancellingApp.close();
+  });
+
+  it("rejects cancelling a terminal task", async () => {
+    const task = await seedTaskEvents(["task.queued"]);
+    await repositories.appendTaskEvent({ taskId: task.id, type: "task.running", payload: {} });
+    await repositories.failTask(task.id, "MODEL_UNAVAILABLE");
+
+    const response = await app.inject({ method: "POST", url: `/v1/tasks/${task.id}/cancel` });
+
+    expect(response.statusCode).toBe(409);
+    expect(response.json()).toEqual({ error: "任务已结束，无法取消" });
   });
 });

@@ -2,7 +2,7 @@ import Redis from "ioredis";
 import { createRepositories } from "@vork/database";
 import { z } from "zod";
 import { createComputerClientFromEnv } from "./computer-client.js";
-import { FakeModel } from "./fake-model.js";
+import { createModelFromEnv } from "./create-model.js";
 import { startWorkerHeartbeat } from "./heartbeat.js";
 import { createTaskWorker, RedisTaskNotifier } from "./queue.js";
 
@@ -31,10 +31,11 @@ export async function start(): Promise<void> {
           VORK_COMPUTER_TOKEN: config.computerToken
         })
       : undefined;
+  const model = createModelFromEnv();
   const worker = createTaskWorker(
     {
       repos,
-      model: new FakeModel(["你好，", "我是 Vork。"]),
+      model,
       notifier: new RedisTaskNotifier(publisherRedis),
       computer
     },

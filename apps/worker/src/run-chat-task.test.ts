@@ -1,4 +1,4 @@
-import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { createRepositories } from "@vork/database";
 import { getTestDatabaseUrl, resetFoundationDatabase } from "@vork/test-support";
 import type { TaskJob } from "@vork/contracts";
@@ -150,5 +150,62 @@ describe("runChatTask", () => {
     expect((await repos.getTask(job.taskId))?.status).toBe("failed");
     expect(events.at(-1)).toMatchObject({ type: "task.failed", payload: { errorCode: "MODEL_UNAVAILABLE" } });
     expect(JSON.stringify(events)).not.toContain("请勿持久化这段用户消息");
+  });
+
+  it("fails when the model yields only empty chunks", async () => {
+    const job = await createJob();
+    const emptyModel = {
+      async *streamReply(): AsyncIterable<string> {
+        yield "";
+        yield "";
+      }
+    };
+
+    await runChatTask(job, { repos, model: emptyModel, notifier });
+
+    expect((await repos.getTask(job.taskId))?.status).toBe("failed");
+    expect(await repos.listTaskEvents(job.taskId, 0)).toMatchObject([
+      { type: "task.queued" },
+      { type: "task.running" },
+      { type: "task.failed", payload: { errorCode: "MODEL_EMPTY_REPLY" } }
+    ]);
+    expect(await repos.listMessages({ userId: job.userId, conversationId: job.conversationId })).toHaveLength(1);
+  });
+
+  it("stops streaming when the task is cancelled mid-flight", async () => {
+    const job = await createJob();
+    let releaseSecondChunk: () => void;
+    const secondChunkGate = new Promise<void>((resolve) => {
+      releaseSecondChunk = resolve;
+    });
+    const model = {
+      async *streamReply(): AsyncIterable<string> {
+        yield "第一段";
+        await secondChunkGate;
+        yield "第二段";
+      }
+    };
+
+    const running = runChatTask(job, { repos, model, notifier });
+    await vi.waitFor(async () => {
+      expect((await repos.listTaskEvents(job.taskId, 0)).map((event) => event.type)).toEqual([
+        "task.queued",
+        "task.running",
+        "message.delta"
+      ]);
+    });
+
+    await repos.cancelTask(job.taskId);
+    releaseSecondChunk!();
+    await running;
+
+    expect((await repos.getTask(job.taskId))?.status).toBe("cancelled");
+    expect((await repos.listTaskEvents(job.taskId, 0)).map((event) => event.type)).toEqual([
+      "task.queued",
+      "task.running",
+      "message.delta",
+      "task.cancelled"
+    ]);
+    expect(await repos.listMessages({ userId: job.userId, conversationId: job.conversationId })).toHaveLength(1);
   });
 });

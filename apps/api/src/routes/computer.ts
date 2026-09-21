@@ -30,6 +30,26 @@ function extractSlotId(payload: unknown): string | undefined {
   return typeof slotId === "string" && slotId.length > 0 ? slotId : undefined;
 }
 
+function findActiveLease(
+  events: Array<{ type: string; payload?: unknown }>,
+  slotId: string
+): string | undefined {
+  let leaseId: string | undefined;
+  for (const event of events) {
+    if (event.type === "slot.acquired" && extractSlotId(event.payload) === slotId) {
+      leaseId = extractLeaseId(event.payload);
+      continue;
+    }
+    if (event.type === "slot.released") {
+      const releasedLeaseId = extractLeaseId(event.payload);
+      if (!releasedLeaseId || releasedLeaseId === leaseId) {
+        leaseId = undefined;
+      }
+    }
+  }
+  return leaseId;
+}
+
 export function registerComputerRoutes(
   app: FastifyInstance,
   dependencies: ApiDependencies,
@@ -47,24 +67,25 @@ export function registerComputerRoutes(
     }
 
     const events = await dependencies.repositories.listTaskEvents(taskId, 0);
-    const acquired = [...events].reverse().find((event) => {
-      if (event.type !== "slot.acquired") return false;
-      return extractSlotId(event.payload) === slotId;
-    });
-    const leaseId = extractLeaseId(acquired?.payload);
+    const leaseId = findActiveLease(events, slotId);
     if (!leaseId) {
       return reply.code(404).send(ErrorResponseSchema.parse({ error: "Slot lease not found" }));
     }
 
-    const upstream = await fetchImpl(
-      new URL(`/v1/slots/${encodeURIComponent(slotId)}/frame?leaseId=${encodeURIComponent(leaseId)}`, computer.baseUrl),
-      {
-        headers: {
-          authorization: `Bearer ${computer.token}`,
-          accept: "image/jpeg"
+    let upstream: Response;
+    try {
+      upstream = await fetchImpl(
+        new URL(`/v1/slots/${encodeURIComponent(slotId)}/frame?leaseId=${encodeURIComponent(leaseId)}`, computer.baseUrl),
+        {
+          headers: {
+            authorization: `Bearer ${computer.token}`,
+            accept: "image/jpeg"
+          }
         }
-      }
-    );
+      );
+    } catch {
+      return reply.code(502).send(ErrorResponseSchema.parse({ error: "Computer unavailable" }));
+    }
 
     if (upstream.status === 404 || upstream.status === 409) {
       return reply.code(upstream.status).send(ErrorResponseSchema.parse({ error: "Frame unavailable" }));
@@ -74,6 +95,10 @@ export function registerComputerRoutes(
     }
 
     const bytes = Buffer.from(await upstream.arrayBuffer());
+    if (bytes.byteLength === 0) {
+      return reply.code(404).send(ErrorResponseSchema.parse({ error: "Frame unavailable" }));
+    }
+
     return reply
       .code(200)
       .header("content-type", "image/jpeg")

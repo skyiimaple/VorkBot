@@ -2,7 +2,7 @@ import { Queue } from "bullmq";
 import { createRepositories } from "@vork/database";
 import { z } from "zod";
 import { buildApp } from "./app.js";
-import { RedisTaskEventSubscriber } from "./services/event-stream.js";
+import { RedisTaskEventPublisher, RedisTaskEventSubscriber } from "./services/event-stream.js";
 
 const ServerConfigSchema = z.object({
   databaseUrl: z.string().url().optional(),
@@ -26,12 +26,14 @@ export async function start(): Promise<void> {
   });
   const repositories = createRepositories({ databaseUrl: config.databaseUrl });
   const queue = new Queue("tasks", { connection: { host: config.redisHost, port: config.redisPort } });
+  const redisUrl = `redis://${config.redisHost}:${config.redisPort}`;
   const app = buildApp({
     repositories,
     queue: {
       publish: (job) => queue.add("execute-task", job, { jobId: job.taskId })
     },
-    eventSubscriber: new RedisTaskEventSubscriber(`redis://${config.redisHost}:${config.redisPort}`),
+    eventSubscriber: new RedisTaskEventSubscriber(redisUrl),
+    taskEventPublisher: new RedisTaskEventPublisher(redisUrl),
     computer:
       config.computerUrl && config.computerToken
         ? { baseUrl: config.computerUrl, token: config.computerToken }

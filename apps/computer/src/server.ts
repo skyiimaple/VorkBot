@@ -28,16 +28,24 @@ export function buildComputerApp(options: ComputerAppOptions): FastifyInstance {
   const app = Fastify();
   const workspaceRoot = options.workspaceRoot ?? "/workspace";
   const browserProfilesRoot = options.browserProfilesRoot ?? "/browser-profiles";
+  const controlStore = new ControlStateStore();
+  const browserSessions = new BrowserSessionRegistry(browserProfilesRoot);
+
+  let browserService: BrowserService | undefined;
   const leaseManager = new LeaseManager({
     maxSlots: options.maxSlots,
     maxBrowserSlots: options.maxBrowserSlots,
     ttlMs: options.leaseTtlMs,
-    isMemoryPressure: options.isMemoryPressure
+    isMemoryPressure: options.isMemoryPressure,
+    onExpired: ({ slotId, kind }) => {
+      controlStore.reset(slotId);
+      if (kind === "browser") {
+        void browserService?.releaseSlot(slotId);
+      }
+    }
   });
   const fileService = new FileService({ workspaceRoot, leaseManager });
-  const browserSessions = new BrowserSessionRegistry(browserProfilesRoot);
-  const controlStore = new ControlStateStore();
-  const browserService = new BrowserService({
+  browserService = new BrowserService({
     leaseManager,
     sessionRegistry: browserSessions,
     controlStore
@@ -48,7 +56,7 @@ export function buildComputerApp(options: ComputerAppOptions): FastifyInstance {
     onRelease: async ({ slotId, kind }) => {
       controlStore.reset(slotId);
       if (kind === "browser") {
-        await browserService.releaseSlot(slotId);
+        await browserService?.releaseSlot(slotId);
       }
     }
   });

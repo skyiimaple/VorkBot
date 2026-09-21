@@ -91,4 +91,70 @@ describe("runFileTask", () => {
     ]);
     expect(computer.release).toHaveBeenCalledWith("lease_1");
   });
+
+  it("records tool.failed and lease.lost when the lease expires mid-tool", async () => {
+    const bot = await repos.createBot({ userId: "user_local", name: "Lease Lost Bot", persona: "文件" });
+    const conversation = await repos.createConversation({ userId: "user_local", botId: bot.id });
+    const queued = await repos.createQueuedMessageTask({
+      userId: "user_local",
+      botId: bot.id,
+      conversationId: conversation.id,
+      content: "[file-demo]"
+    });
+
+    const { ComputerClientError } = await import("./computer-client.js");
+    const computer: ComputerClientLike = {
+      acquire: vi.fn(async () => ({
+        slotId: "slot_1",
+        leaseId: "lease_1",
+        expiresAt: "2026-09-16T00:01:00.000Z"
+      })),
+      heartbeat: vi.fn(async () => ({
+        slotId: "slot_1",
+        leaseId: "lease_1",
+        expiresAt: "2026-09-16T00:02:00.000Z"
+      })),
+      release: vi.fn(async () => {}),
+      writeFile: vi.fn(async () => {
+        throw new ComputerClientError("lease_expired", 409);
+      }),
+      readFile: vi.fn(async () => ({ path: "notes/hello.txt", content: "x", bytes: 1 })),
+      observe: vi.fn(async () => ({
+        pageId: "page_1",
+        url: "about:blank",
+        title: "",
+        loadState: "loaded" as const,
+        elements: [],
+        consoleErrors: []
+      })),
+      navigate: vi.fn(async () => ({ url: "about:blank" })),
+      click: vi.fn(async () => ({ ref: "el_1" })),
+      type: vi.fn(async () => ({ ref: "el_1" }))
+    };
+
+    await runFileTask(
+      {
+        taskId: queued.task.id,
+        userId: queued.task.userId,
+        botId: queued.task.botId,
+        conversationId: queued.task.conversationId,
+        messageId: queued.task.messageId
+      },
+      { repos, computer, notifier }
+    );
+
+    const task = await repos.getTask(queued.task.id);
+    expect(task?.status).toBe("failed");
+    const events = await repos.listTaskEvents(queued.task.id, 0);
+    expect(events.map((event) => event.type)).toEqual([
+      "task.queued",
+      "task.running",
+      "slot.acquired",
+      "tool.started",
+      "tool.failed",
+      "lease.lost",
+      "task.failed"
+    ]);
+    expect(computer.release).toHaveBeenCalledWith("lease_1");
+  });
 });
