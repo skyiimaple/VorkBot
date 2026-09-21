@@ -1,3 +1,4 @@
+export * from "./agent.js";
 export * from "./bot.js";
 export * from "./computer.js";
 export * from "./conversation.js";

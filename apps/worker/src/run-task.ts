@@ -1,7 +1,9 @@
 import type { TaskJob } from "@vork/contracts";
 import type { Job } from "bullmq";
 import type { Repositories } from "@vork/database";
+import { runAgentLoop } from "./agent-loop.js";
 import type { ComputerClientLike } from "./computer-client.js";
+import { isAgentFileMessage } from "./fake-action-model.js";
 import type { ModelProvider } from "./model.js";
 import type { TaskNotifier } from "./queue.js";
 import { runChatTask } from "./run-chat-task.js";
@@ -46,6 +48,20 @@ export async function runTask(
   const userMessage = messages.find((message) => message.id === task.messageId && message.authorType === "user");
   if (!userMessage) {
     await runChatTask(job, deps);
+    return;
+  }
+
+  if (isAgentFileMessage(userMessage.content)) {
+    if (!deps.computer) {
+      await failWithoutComputer(job.taskId, deps);
+      return;
+    }
+    await runAgentLoop(job, {
+      repos: deps.repos,
+      computer: deps.computer,
+      notifier: deps.notifier,
+      job: queueJob
+    });
     return;
   }
 

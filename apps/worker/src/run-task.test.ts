@@ -78,6 +78,18 @@ describe("runTask routing", () => {
     expect(await repos.listMessages({ userId: job.userId, conversationId: job.conversationId })).toHaveLength(1);
   });
 
+  it("fails [agent-file] cleanly when computer is not configured", async () => {
+    const job = await createJob("[agent-file] 写文件");
+
+    await runTask(job, { repos, model: new FakeModel(["不应使用"]), notifier });
+
+    expect((await repos.getTask(job.taskId))?.status).toBe("failed");
+    expect((await repos.listTaskEvents(job.taskId, 0)).at(-1)).toMatchObject({
+      type: "task.failed",
+      payload: { errorCode: "COMPUTER_UNAVAILABLE" }
+    });
+  });
+
   it("fails [browser-demo] cleanly when computer is not configured", async () => {
     const job = await createJob("请执行 [browser-demo]");
 

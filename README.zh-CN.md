@@ -37,7 +37,7 @@ LLM_BASE_URL=https://api.deepseek.com
 LLM_MODEL=deepseek-v4-flash
 ```
 
-`LLM_BASE_URL` 可不带 `/v1`（Worker 会自动补全）。改完后重建/重启 Worker：`docker compose up -d --build worker`。桌面发消息即可；或 `pnpm smoke`（已不校验 FakeModel 固定文案）。`[file-demo]` / `[browser-demo]` 仍走 Computer 固定剧本，不经 LLM。
+`LLM_BASE_URL` 可不带 `/v1`（Worker 会自动补全）。改完后重建/重启 Worker：`docker compose up -d --build worker`。桌面发消息即可；或 `pnpm smoke`（已不校验 FakeModel 固定文案）。`[file-demo]` / `[browser-demo]` 仍走 Computer 固定剧本；`[agent-file]` 走阶段 3 受控 Agent 循环（FakeActionModel 动作序列 + 预算护栏），不经 LLM。
 
 ## 测试与排查
 
