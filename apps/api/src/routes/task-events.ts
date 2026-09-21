@@ -61,4 +61,32 @@ export function registerTaskEventRoutes(
       return reply.code(409).send(ErrorResponseSchema.parse({ error: "任务已结束，无法取消" }));
     }
   });
+
+  app.post("/v1/tasks/:id/approvals", async (request, reply) => {
+    const { id: taskId } = TaskParamsSchema.parse(request.params);
+    const body = z.object({ decision: z.enum(["approve", "reject"]) }).parse(request.body);
+    const task = await dependencies.repositories.getTask(taskId);
+    if (!task || task.userId !== request.userId) {
+      return reply.code(404).send(ErrorResponseSchema.parse({ error: "任务不存在" }));
+    }
+    if (task.status !== "waiting_approval") {
+      return reply.code(409).send(ErrorResponseSchema.parse({ error: "任务不在等待审批" }));
+    }
+    try {
+      const resolved = TaskSchema.parse(
+        await dependencies.repositories.resolveApproval({ taskId, decision: body.decision })
+      );
+      try {
+        await dependencies.taskEventPublisher?.publish(taskId);
+      } catch {
+        // 持久化事件仍可按游标对齐。
+      }
+      return { task: resolved };
+    } catch (error) {
+      if (error instanceof Error && error.message === "APPROVAL_NOT_RESUMABLE") {
+        return reply.code(409).send(ErrorResponseSchema.parse({ error: "当前仅支持批准记忆写入" }));
+      }
+      return reply.code(409).send(ErrorResponseSchema.parse({ error: "无法处理审批" }));
+    }
+  });
 }

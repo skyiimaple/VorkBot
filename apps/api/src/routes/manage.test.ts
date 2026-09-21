@@ -98,4 +98,65 @@ describe("Manage routes", () => {
       credentials: [{ label: "FakeModel（内置）", statusLabel: "启用", modeLabel: "本地" }]
     });
   });
+
+  it("stores a model credential without returning the raw key", async () => {
+    const secret = "sk-phase3-do-not-leak";
+    const saved = await app.inject({
+      method: "PUT",
+      url: "/v1/credentials",
+      payload: {
+        provider: "openai-compatible",
+        apiKey: secret,
+        baseUrl: "https://api.deepseek.com",
+        model: "deepseek-v4-flash"
+      }
+    });
+    expect(saved.statusCode).toBe(200);
+    expect(JSON.stringify(saved.json())).not.toContain(secret);
+    expect(saved.json()).toMatchObject({
+      source: "database",
+      credentials: [{ configured: true, summary: expect.stringContaining("****leak") }]
+    });
+  });
+
+  it("approves a sensitive memory and saves the task as a skill draft", async () => {
+    const created = await app.inject({
+      method: "POST",
+      url: "/v1/bots",
+      payload: { name: "审批 Bot", persona: "记忆" }
+    });
+    const botId = created.json().bot.id as string;
+    const conversationId = created.json().conversation.id as string;
+    const queued = await app.inject({
+      method: "POST",
+      url: `/v1/conversations/${conversationId}/messages`,
+      payload: { content: "记住敏感事项" }
+    });
+    const taskId = queued.json().task.id as string;
+    await repositories.requestApproval({
+      taskId,
+      reason: "sensitive_memory",
+      action: { type: "memory.propose", kind: "fact", content: "证件号 123", sensitivity: "sensitive" }
+    });
+
+    const approved = await app.inject({
+      method: "POST",
+      url: `/v1/tasks/${taskId}/approvals`,
+      payload: { decision: "approve" }
+    });
+    expect(approved.statusCode).toBe(200);
+    expect(approved.json().task.status).toBe("completed");
+
+    const memories = await app.inject({ method: "GET", url: `/v1/bots/${botId}/memories` });
+    expect(memories.json().memories).toEqual([
+      expect.objectContaining({ content: "证件号 123", sensitivity: "sensitive" })
+    ]);
+
+    const saved = await app.inject({ method: "POST", url: "/v1/skills", payload: { taskId } });
+    expect(saved.statusCode).toBe(200);
+    expect(saved.json().skill.status).toBe("draft");
+    const skills = await app.inject({ method: "GET", url: "/v1/skills" });
+    expect(skills.json().source).toBe("database");
+    expect(skills.json().skills[0]).toMatchObject({ status: "draft", statusLabel: "草稿" });
+  });
 });

@@ -9,6 +9,19 @@ describe("evaluateActionPolicy", () => {
     expect(evaluateActionPolicy({ type: "file.write", path: "notes/a.txt", content: "x" })).toEqual({
       decision: "allow"
     });
+    expect(evaluateActionPolicy({ type: "memory.propose", kind: "fact", content: "喜欢简体中文", sensitivity: "normal" })).toEqual({
+      decision: "allow"
+    });
+  });
+
+  it("asks for approval on sensitive writes and memories", () => {
+    expect(evaluateActionPolicy({ type: "file.write", path: "sensitive/token.txt", content: "x" })).toEqual({
+      decision: "needs_approval",
+      reason: "sensitive_write"
+    });
+    expect(
+      evaluateActionPolicy({ type: "memory.propose", kind: "fact", content: "证件号", sensitivity: "sensitive" })
+    ).toEqual({ decision: "needs_approval", reason: "sensitive_memory" });
   });
 
   it("denies unsafe paths", () => {

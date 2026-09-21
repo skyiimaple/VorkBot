@@ -1,4 +1,9 @@
 import postgres from "postgres";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const phase3SqlPath = join(dirname(fileURLToPath(import.meta.url)), "../../database/migrations/0002_phase3.sql");
 
 export function getTestDatabaseUrl(): string {
   const databaseUrl = process.env.VORK_TEST_DATABASE_URL ?? process.env.TEST_DATABASE_URL;
@@ -23,8 +28,9 @@ export async function resetFoundationDatabase(databaseUrl: string): Promise<void
   const sql = postgres(databaseUrl, { max: 1 });
 
   try {
+    await sql.unsafe(readFileSync(phase3SqlPath, "utf8"));
     await sql.unsafe(
-      "TRUNCATE TABLE task_events, tasks, messages, conversation_members, conversations, bots, users RESTART IDENTITY CASCADE"
+      "TRUNCATE TABLE approvals, memories, skill_proposals, model_credentials, task_events, tasks, messages, conversation_members, conversations, bots, users RESTART IDENTITY CASCADE"
     );
   } finally {
     await sql.end({ timeout: 5 });

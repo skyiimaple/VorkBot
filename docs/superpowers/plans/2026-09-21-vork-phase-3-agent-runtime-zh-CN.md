@@ -117,33 +117,38 @@ skills/…                            仓库内 Skill 手册（与 DB 草稿并�
 
 ## Task 6：审批状态机
 
-- DB/任务状态扩展 `waiting_approval`（迁移）；API 批准/拒绝；事件 `approval.request` / `approval.resolved`
-- 本阶段可不做 macOS 通知
+- [x] 任务状态增加 `waiting_approval`；事件 `approval.request` / `approval.resolved`
+- [x] `POST /v1/tasks/:id/approvals`：拒绝 → `APPROVAL_REJECTED`；批准目前仅落地 `memory.propose`
+- [x] 敏感路径 `sensitive/` 与 `sensitivity=sensitive` 的记忆进入等待，不直接执行
+- [x] 本阶段不做 macOS 通知
 
 ---
 
 ## Task 7：记忆（身份 / 事实 / 工作）
 
-- 表 `memories`；动作 `memory.propose`；敏感需确认；工作记忆任务结束压缩
+- [x] 表 `memories`；动作 `memory.propose`（普通自动写入并去重，敏感需审批）
+- [x] 任务完成时压缩工作记忆；`GET /v1/bots/:id/memories`
 
 ---
 
 ## Task 8：Skills 草稿
 
-- 「保存为 Skill」API + `skill_proposals`；相似成功任务建议草稿；不自动启用
+- [x] `POST /v1/skills` 把已完成任务存为 draft；`GET /v1/skills` 列出草稿
+- [x] 同一 Bot 第二次成功任务追加 `skill.suggest`（不自动启用）
 
 ---
 
 ## Task 9：凭据持久化（密钥只写不读）
 
-- 替换 stub `GET/PUT /v1/credentials`；列表只暴露 `configured`/`masked`；Worker 启动优先读 DB 再回退 `LLM_*`
-- 桌面管理页仅在必要时改动表单（可后置）
+- [x] `PUT /v1/credentials` 写入；`GET` 只返回掩码，不含明文
+- [x] Worker 启动：已有 `LLM_API_KEY` 优先，否则读库中 `user_local` 凭据
+- [ ] 桌面管理页表单后置（仍为说明页）
 
 ---
 
 ## Task 10：文档与验收收尾
 
-- 更新 `README.zh-CN.md`、handover；列出 Fake/真模型验收路径
+- [x] 更新 `README.zh-CN.md` 与 handover 的 Fake/真模型及审批、记忆、Skill、凭据路径
 
 ## 本阶段不做
 

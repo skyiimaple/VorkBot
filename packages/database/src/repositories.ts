@@ -534,6 +534,236 @@ export function createRepositories(options: DatabaseClientOptions = {}) {
         `;
         return { task: toTask(required(updatedRows, "Task could not be completed")), message: toMessage(message) };
       });
+    },
+
+    async requestApproval(input: { taskId: string; reason: string; action: unknown }): Promise<Task> {
+      return sql.begin(async (transaction) => {
+        const taskRows = await transaction<TaskRow[]>`
+          SELECT id, user_id, bot_id, conversation_id, message_id, status, last_event_sequence, created_at, updated_at
+          FROM tasks WHERE id = ${input.taskId} FOR UPDATE
+        `;
+        const task = required(taskRows, "Task does not exist");
+        if (terminalTaskStatuses.includes(task.status) || task.status === "waiting_approval") {
+          throw new Error("Task cannot request approval");
+        }
+        const now = new Date().toISOString();
+        const approvalId = id("approval");
+        await transaction`
+          INSERT INTO approvals (id, task_id, user_id, reason, action, status, created_at)
+          VALUES (${approvalId}, ${task.id}, ${task.user_id}, ${input.reason}, ${JSON.stringify(input.action)}::jsonb, 'pending', ${now})
+        `;
+        const sequence = task.last_event_sequence + 1;
+        const updatedRows = await transaction<TaskRow[]>`
+          UPDATE tasks
+          SET status = 'waiting_approval', last_event_sequence = ${sequence}, updated_at = ${now}
+          WHERE id = ${task.id}
+          RETURNING id, user_id, bot_id, conversation_id, message_id, status, last_event_sequence, created_at, updated_at
+        `;
+        await transaction`
+          INSERT INTO task_events (id, task_id, user_id, sequence, type, payload, created_at)
+          VALUES (
+            ${id("event")}, ${task.id}, ${task.user_id}, ${sequence}, 'approval.request',
+            ${JSON.stringify({ approvalId, reason: input.reason, actionType: actionTypeOf(input.action) })}::jsonb,
+            ${now}
+          )
+        `;
+        return toTask(required(updatedRows, "Task could not wait for approval"));
+      });
+    },
+
+    async getPendingApproval(taskId: string): Promise<{ id: string; action: unknown; reason: string } | null> {
+      const rows = await sql<{ id: string; action: unknown; reason: string }[]>`
+        SELECT id, action, reason FROM approvals
+        WHERE task_id = ${taskId} AND status = 'pending'
+        ORDER BY created_at DESC
+        LIMIT 1
+      `;
+      return rows[0] ?? null;
+    },
+
+    async resolveApproval(input: { taskId: string; decision: "approve" | "reject" }): Promise<Task> {
+      const pending = await sql<{ id: string; action: unknown }[]>`
+        SELECT id, action FROM approvals WHERE task_id = ${input.taskId} AND status = 'pending' ORDER BY created_at DESC LIMIT 1
+      `;
+      const approval = pending[0];
+      if (!approval) throw new Error("No pending approval");
+      const action = approval.action as { type?: string; kind?: string; content?: string; sensitivity?: string };
+      if (input.decision === "approve" && action?.type !== "memory.propose") {
+        throw new Error("APPROVAL_NOT_RESUMABLE");
+      }
+      const now = new Date().toISOString();
+      if (input.decision === "reject") {
+        await sql`
+          UPDATE approvals SET status = 'rejected', resolved_at = ${now} WHERE id = ${approval.id}
+        `;
+        const taskRows = await sql<TaskRow[]>`SELECT id, user_id, last_event_sequence FROM tasks WHERE id = ${input.taskId}`;
+        const task = required(taskRows, "Task does not exist");
+        const sequence = task.last_event_sequence + 1;
+        await sql`
+          INSERT INTO task_events (id, task_id, user_id, sequence, type, payload, created_at)
+          VALUES (
+            ${id("event")}, ${input.taskId}, ${task.user_id}, ${sequence}, 'approval.resolved',
+            ${JSON.stringify({ approvalId: approval.id, decision: "reject" })}::jsonb, ${now}
+          )
+        `;
+        await sql`UPDATE tasks SET last_event_sequence = ${sequence}, updated_at = ${now} WHERE id = ${input.taskId}`;
+        return this.failTask(input.taskId, "APPROVAL_REJECTED");
+      }
+
+      await sql`
+        UPDATE approvals SET status = 'approved', resolved_at = ${now} WHERE id = ${approval.id}
+      `;
+      const taskRows = await sql<TaskRow[]>`
+        SELECT id, user_id, bot_id, conversation_id, message_id, status, last_event_sequence, created_at, updated_at
+        FROM tasks WHERE id = ${input.taskId}
+      `;
+      const task = required(taskRows, "Task does not exist");
+      const sequence = task.last_event_sequence + 1;
+      await sql`
+        INSERT INTO task_events (id, task_id, user_id, sequence, type, payload, created_at)
+        VALUES (
+          ${id("event")}, ${task.id}, ${task.user_id}, ${sequence}, 'approval.resolved',
+          ${JSON.stringify({ approvalId: approval.id, decision: "approve" })}::jsonb, ${now}
+        )
+      `;
+      await sql`UPDATE tasks SET last_event_sequence = ${sequence}, updated_at = ${now} WHERE id = ${task.id}`;
+      if (action?.type === "memory.propose" && action.kind && action.content) {
+        await this.insertMemory({
+          userId: task.user_id,
+          botId: task.bot_id,
+          kind: action.kind,
+          content: action.content,
+          sensitivity: action.sensitivity === "sensitive" ? "sensitive" : "normal",
+          sourceTaskId: task.id
+        });
+        return (await this.completeTaskWithMessage({ taskId: task.id, content: "已批准并保存记忆。" })).task;
+      }
+      throw new Error("APPROVAL_NOT_RESUMABLE");
+    },
+
+    async insertMemory(input: {
+      userId: string;
+      botId: string;
+      kind: string;
+      content: string;
+      sensitivity: string;
+      sourceTaskId?: string;
+    }): Promise<{ id: string; created: boolean }> {
+      const existing = await sql<{ id: string }[]>`
+        SELECT id FROM memories
+        WHERE bot_id = ${input.botId} AND kind = ${input.kind} AND content = ${input.content} AND superseded_by IS NULL
+        LIMIT 1
+      `;
+      if (existing[0]) return { id: existing[0].id, created: false };
+      const now = new Date().toISOString();
+      const memoryId = id("memory");
+      await sql`
+        INSERT INTO memories (id, user_id, bot_id, kind, content, sensitivity, source_task_id, created_at)
+        VALUES (
+          ${memoryId}, ${input.userId}, ${input.botId}, ${input.kind}, ${input.content}, ${input.sensitivity},
+          ${input.sourceTaskId ?? null}, ${now}
+        )
+      `;
+      return { id: memoryId, created: true };
+    },
+
+    async listMemories(input: { userId: string; botId: string }): Promise<Array<{ id: string; kind: string; content: string; sensitivity: string }>> {
+      return sql`
+        SELECT id, kind, content, sensitivity FROM memories
+        WHERE user_id = ${input.userId} AND bot_id = ${input.botId} AND superseded_by IS NULL
+        ORDER BY created_at ASC
+      `;
+    },
+
+    async compressWorkingMemory(input: { userId: string; botId: string; taskId: string; content: string }): Promise<void> {
+      const created = await this.insertMemory({
+        userId: input.userId,
+        botId: input.botId,
+        kind: "working",
+        content: input.content,
+        sensitivity: "normal",
+        sourceTaskId: input.taskId
+      });
+      await sql`
+        UPDATE memories
+        SET superseded_by = ${created.id}
+        WHERE bot_id = ${input.botId} AND kind = 'working' AND superseded_by IS NULL AND id <> ${created.id}
+      `;
+    },
+
+    async countCompletedTasks(botId: string): Promise<number> {
+      const rows = await sql<{ count: string }[]>`
+        SELECT count(*)::text AS count FROM tasks WHERE bot_id = ${botId} AND status = 'completed'
+      `;
+      return Number(rows[0]?.count ?? 0);
+    },
+
+    async createSkillProposal(input: {
+      userId: string;
+      botId: string;
+      taskId: string;
+      name: string;
+      summary: string;
+    }): Promise<{ id: string; status: "draft" }> {
+      const now = new Date().toISOString();
+      const proposalId = id("skill");
+      await sql`
+        INSERT INTO skill_proposals (id, user_id, bot_id, task_id, name, summary, status, created_at)
+        VALUES (${proposalId}, ${input.userId}, ${input.botId}, ${input.taskId}, ${input.name}, ${input.summary}, 'draft', ${now})
+      `;
+      return { id: proposalId, status: "draft" };
+    },
+
+    async listSkillProposals(userId: string): Promise<Array<{ id: string; name: string; summary: string; createdAt: string }>> {
+      const rows = await sql<{ id: string; name: string; summary: string; created_at: DateValue }[]>`
+        SELECT id, name, summary, created_at FROM skill_proposals
+        WHERE user_id = ${userId}
+        ORDER BY created_at DESC
+      `;
+      return rows.map((row) => ({
+        id: row.id,
+        name: row.name,
+        summary: row.summary,
+        createdAt: iso(row.created_at)
+      }));
+    },
+
+    async upsertModelCredential(input: {
+      userId: string;
+      provider: string;
+      apiKey: string;
+      baseUrl?: string;
+      model?: string;
+    }): Promise<void> {
+      const now = new Date().toISOString();
+      await sql`
+        INSERT INTO users (id, created_at, updated_at)
+        VALUES (${input.userId}, ${now}, ${now})
+        ON CONFLICT (id) DO NOTHING
+      `;
+      await sql`
+        INSERT INTO model_credentials (id, user_id, provider, api_key, base_url, model, updated_at)
+        VALUES (${id("credential")}, ${input.userId}, ${input.provider}, ${input.apiKey}, ${input.baseUrl ?? null}, ${input.model ?? null}, ${now})
+        ON CONFLICT (user_id, provider) DO UPDATE
+        SET api_key = EXCLUDED.api_key, base_url = EXCLUDED.base_url, model = EXCLUDED.model, updated_at = EXCLUDED.updated_at
+      `;
+    },
+
+    async getModelCredential(userId: string): Promise<{ provider: string; apiKey: string; baseUrl: string | null; model: string | null } | null> {
+      const rows = await sql<{ provider: string; api_key: string; base_url: string | null; model: string | null }[]>`
+        SELECT provider, api_key, base_url, model FROM model_credentials
+        WHERE user_id = ${userId}
+        ORDER BY updated_at DESC
+        LIMIT 1
+      `;
+      const row = rows[0];
+      if (!row) return null;
+      return { provider: row.provider, apiKey: row.api_key, baseUrl: row.base_url, model: row.model };
     }
   };
+}
+
+function actionTypeOf(action: unknown): string {
+  if (action && typeof action === "object" && "type" in action && typeof action.type === "string") return action.type;
+  return "unknown";
 }

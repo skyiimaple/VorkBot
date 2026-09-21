@@ -145,4 +145,34 @@ describe("runAgentLoop", () => {
       payload: { errorCode: "BUDGET_EXCEEDED" }
     });
   });
+
+  it("pauses on sensitive writes instead of executing them", async () => {
+    const job = await createJob("[agent-file] 敏感写入");
+    const computer = mockComputer();
+    const actionModel = new FakeActionModel([
+      { type: "file.write", path: "sensitive/token.txt", content: "secret" }
+    ]);
+
+    await runAgentLoop(job, { repos, computer, notifier, actionModel });
+
+    expect((await repos.getTask(job.taskId))?.status).toBe("waiting_approval");
+    expect(computer.writeFile).not.toHaveBeenCalled();
+    expect((await repos.listTaskEvents(job.taskId, 0)).some((event) => event.type === "approval.request")).toBe(true);
+  });
+
+  it("saves a normal memory proposal and compresses working memory on complete", async () => {
+    const job = await createJob("[agent-file] 记住偏好");
+    const computer = mockComputer();
+    const actionModel = new FakeActionModel([
+      { type: "memory.propose", kind: "fact", content: "喜欢简体中文", sensitivity: "normal" },
+      { type: "task.complete" }
+    ]);
+
+    await runAgentLoop(job, { repos, computer, notifier, actionModel });
+
+    expect((await repos.getTask(job.taskId))?.status).toBe("completed");
+    const memories = await repos.listMemories({ userId: job.userId, botId: job.botId });
+    expect(memories.some((memory) => memory.content === "喜欢简体中文")).toBe(true);
+    expect(memories.some((memory) => memory.kind === "working")).toBe(true);
+  });
 });

@@ -62,8 +62,9 @@ curl -sS "http://127.0.0.1:3000/v1/conversations/$CID/messages"
 | 文件 / 浏览器工具 | **真 Computer**：Compose 内 Playwright + 工作区卷；由消息标记 `[file-demo]` / `[browser-demo]` 触发固定剧本，**不是**模型自主规划 |
 | 画面面板 | **真**：经 API 代理 Computer JPEG；桌面不持有 Computer URL/token |
 | 终端工具 | **未做** |
-| 真实 AI 供应商 | **已接最小切片**：环境变量 `LLM_*`；管理页持久化凭据 / Agent 循环 / 预算审批仍未做 |
-| Skills / 多 Agent | **未做** |
+| 真实 AI 供应商 | **聊天 + `[agent-llm]` 结构化动作**；`LLM_*` 优先，否则读 `model_credentials`（GET 只回掩码） |
+| 预算 / 审批 | **已接**：轮数/工具/时长预算；`sensitive/` 与敏感记忆进入 `waiting_approval` |
+| 记忆 / Skills | **已接最小切片**：`memory.propose`、工作记忆压缩、`POST /v1/skills` 草稿（不自动启用）。多 Agent 未做 |
 
 不要把未配 key 时的 FakeModel 聊天当成「已接 Grok」；也不要把 `[file-demo]` 当成开放式 Agent。
 
@@ -75,7 +76,7 @@ curl -sS "http://127.0.0.1:3000/v1/conversations/$CID/messages"
 
 ## 已知缺口
 
-1. 模型凭据仅环境变量；管理页 UI / DB 凭据表、预算与审批、记忆与 Skills 仍未做。
+1. 桌面凭据表单仍是说明页；密钥写入走 `PUT /v1/credentials`，不要把 key 放进仓库。终端、公网部署仍未做。
 2. Computer 无宿主机端口，宿主机无法直接 `curl :8080`；只能靠 healthcheck 的 `compose exec` 或经 API/Worker。
 3. 完整 `pnpm test` 依赖本机隔离测试 Postgres（`55432`）；未起测库会失败。
 4. 桌面 UI 与 E2E 可能因未提交改动不同步；`pnpm e2e` 通过不代表脏工作区 UI 已验收。

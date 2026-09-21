@@ -5,7 +5,7 @@ const IdentifierSchema = z.string().trim().min(1);
 const DateTimeSchema = z.string().datetime();
 const TrimmedTextSchema = z.string().trim().min(1);
 
-export const TaskStatusLabelSchema = z.enum(["排队", "运行中", "已完成", "失败", "已取消"]);
+export const TaskStatusLabelSchema = z.enum(["排队", "运行中", "等待审批", "已完成", "失败", "已取消"]);
 
 export const TaskListItemSchema = TaskSchema.extend({
   title: TrimmedTextSchema,
@@ -39,7 +39,7 @@ export const SkillSchema = z.object({
 
 export const ListSkillsResponseSchema = z.object({
   skills: z.array(SkillSchema),
-  source: z.literal("stub")
+  source: z.enum(["stub", "database"])
 });
 
 export const WorkspaceFileKindSchema = z.enum(["file", "directory"]);
@@ -82,7 +82,7 @@ export const ListModelCredentialsResponseSchema = z.object({
     label: TrimmedTextSchema,
     description: TrimmedTextSchema
   }),
-  source: z.literal("stub")
+  source: z.enum(["stub", "database"])
 });
 
 export type TaskListItem = z.infer<typeof TaskListItemSchema>;

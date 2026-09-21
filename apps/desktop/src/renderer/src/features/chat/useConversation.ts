@@ -25,7 +25,7 @@ export function useVorkApi(): VorkApi {
 }
 
 function isActiveTaskStatus(status: Task["status"]): boolean {
-  return status === "queued" || status === "running";
+  return status === "queued" || status === "running" || status === "waiting_approval";
 }
 
 export function useConversation(conversationId: string) {
@@ -178,6 +178,7 @@ function slotIdFromPayload(payload: unknown): string | undefined {
 
 function taskStatusFor(type: string): Task["status"] | undefined {
   if (type === "task.running") return "running";
+  if (type === "approval.request") return "waiting_approval";
   if (type === "task.completed") return "completed";
   if (type === "task.failed") return "failed";
   if (type === "task.cancelled") return "cancelled";

@@ -20,6 +20,7 @@ import {
   type ActionModel
 } from "./fake-action-model.js";
 import { evaluateActionPolicy } from "./policy.js";
+import { shouldSuggestSkillDraft, workingMemorySummary } from "./phase3-helpers.js";
 import type { TaskNotifier } from "./queue.js";
 import { retryOrFailSlotWait, toSlotWaitError } from "./slot-retry.js";
 import { assertTaskStillActive } from "./task-guard.js";
@@ -127,12 +128,15 @@ export async function runAgentLoop(rawJob: TaskJob, deps: AgentLoopDependencies)
       await notify(deps.notifier, task.id);
 
       const policy = evaluateActionPolicy(action);
-      if (policy.decision === "deny" || policy.decision === "needs_approval") {
+      if (policy.decision === "deny") {
         if (!(await assertTaskStillActive(deps.repos, task.id))) return;
-        await deps.repos.failTask(
-          task.id,
-          policy.decision === "needs_approval" ? "APPROVAL_REQUIRED" : "POLICY_DENIED"
-        );
+        await deps.repos.failTask(task.id, "POLICY_DENIED");
+        await notify(deps.notifier, task.id);
+        return;
+      }
+      if (policy.decision === "needs_approval") {
+        if (!(await assertTaskStillActive(deps.repos, task.id))) return;
+        await deps.repos.requestApproval({ taskId: task.id, reason: policy.reason, action });
         await notify(deps.notifier, task.id);
         return;
       }
@@ -140,6 +144,20 @@ export async function runAgentLoop(rawJob: TaskJob, deps: AgentLoopDependencies)
       if (action.type === "task.complete") {
         if (!(await assertTaskStillActive(deps.repos, task.id))) return;
         const content = reply.trim() || "任务已完成。";
+        await deps.repos.compressWorkingMemory({
+          userId: task.userId,
+          botId: task.botId,
+          taskId: task.id,
+          content: workingMemorySummary(content)
+        });
+        const priorCompleted = await deps.repos.countCompletedTasks(task.botId);
+        if (shouldSuggestSkillDraft(priorCompleted)) {
+          await deps.repos.appendTaskEvent({
+            taskId: task.id,
+            type: "skill.suggest",
+            payload: { reason: "repeated_success" }
+          });
+        }
         await deps.repos.completeTaskWithMessage({ taskId: task.id, content });
         await notify(deps.notifier, task.id);
         return;
@@ -163,6 +181,19 @@ export async function runAgentLoop(rawJob: TaskJob, deps: AgentLoopDependencies)
           });
           await notify(deps.notifier, task.id);
         }
+        continue;
+      }
+
+      if (action.type === "memory.propose") {
+        await deps.repos.insertMemory({
+          userId: task.userId,
+          botId: task.botId,
+          kind: action.kind,
+          content: action.content,
+          sensitivity: action.sensitivity,
+          sourceTaskId: task.id
+        });
+        lastObservation = `saved ${action.kind} memory`;
         continue;
       }
 

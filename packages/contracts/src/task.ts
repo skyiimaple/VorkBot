@@ -10,7 +10,7 @@ export const TaskSchema = z.object({
   botId: IdentifierSchema,
   conversationId: IdentifierSchema,
   messageId: IdentifierSchema,
-  status: z.enum(["queued", "running", "completed", "failed", "cancelled"]),
+  status: z.enum(["queued", "running", "waiting_approval", "completed", "failed", "cancelled"]),
   createdAt: DateTimeSchema,
   updatedAt: DateTimeSchema
 });

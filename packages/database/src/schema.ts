@@ -73,7 +73,7 @@ export const tasks = pgTable(
     updatedAt: timestampWithTimeZone("updated_at").notNull()
   },
   (table) => [
-    check("tasks_status_check", sql`${table.status} IN ('queued', 'running', 'completed', 'failed', 'cancelled')`),
+    check("tasks_status_check", sql`${table.status} IN ('queued', 'running', 'waiting_approval', 'completed', 'failed', 'cancelled')`),
     check("tasks_last_event_sequence_check", sql`${table.lastEventSequence} >= 0`)
   ]
 );

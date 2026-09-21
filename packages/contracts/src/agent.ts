@@ -40,13 +40,23 @@ export const FileReadActionSchema = z
   })
   .strict();
 
-/** 模型每轮只能返回其中一个动作（阶段 3 首批：消息 + 文件） */
+export const MemoryProposeActionSchema = z
+  .object({
+    type: z.literal("memory.propose"),
+    kind: z.enum(["identity", "fact", "working"]),
+    content: z.string().trim().min(1).max(4000),
+    sensitivity: z.enum(["normal", "sensitive"]).default("normal")
+  })
+  .strict();
+
+/** 模型每轮只能返回其中一个动作（阶段 3：消息、文件、记忆建议） */
 export const AgentActionSchema = z.discriminatedUnion("type", [
   MessageReplyActionSchema,
   TaskCompleteActionSchema,
   TaskFailActionSchema,
   FileWriteActionSchema,
-  FileReadActionSchema
+  FileReadActionSchema,
+  MemoryProposeActionSchema
 ]);
 
 export const TaskBudgetSchema = z

@@ -31,6 +31,12 @@ export async function start(): Promise<void> {
           VORK_COMPUTER_TOKEN: config.computerToken
         })
       : undefined;
+  const storedCredential = await repos.getModelCredential("user_local").catch(() => null);
+  if (!process.env.LLM_API_KEY?.trim() && storedCredential?.apiKey) {
+    process.env.LLM_API_KEY = storedCredential.apiKey;
+    if (storedCredential.baseUrl) process.env.LLM_BASE_URL = storedCredential.baseUrl;
+    if (storedCredential.model) process.env.LLM_MODEL = storedCredential.model;
+  }
   const model = createModelFromEnv();
   const worker = createTaskWorker(
     {

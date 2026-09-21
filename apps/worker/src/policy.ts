@@ -25,7 +25,14 @@ export function evaluateActionPolicy(action: AgentAction): PolicyDecision {
       if (!isSafeWorkspacePath(action.path)) {
         return { decision: "deny", reason: "unsafe_path" };
       }
-      // 本阶段：Bot 工作区内 write 自动允许；高风险写留给 Task 6 审批
+      if (action.path === "sensitive" || action.path.startsWith("sensitive/")) {
+        return { decision: "needs_approval", reason: "sensitive_write" };
+      }
+      return { decision: "allow" };
+    case "memory.propose":
+      if (action.sensitivity === "sensitive") {
+        return { decision: "needs_approval", reason: "sensitive_memory" };
+      }
       return { decision: "allow" };
   }
 }

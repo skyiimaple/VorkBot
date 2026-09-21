@@ -27,17 +27,35 @@ Compose 依次启动 PostgreSQL、Valkey、数据库迁移、Computer、API 和 
 
 Computer 不映射宿主机端口，仅由 Worker/API 通过内网调用；桌面不持有 Computer 地址或 token。
 
-### 真实模型（阶段 3 最小切片）
+### 阶段 3：Agent 循环、审批、记忆与凭据
 
 在 `.env`（已 gitignore）填写：
 
 ```sh
-LLM_API_KEY=sk-...          # 空则回退 FakeModel
+LLM_API_KEY=sk-...          # 空则回退 FakeModel；也可改走 PUT /v1/credentials（响应不含明文）
 LLM_BASE_URL=https://api.deepseek.com
 LLM_MODEL=deepseek-v4-flash
 ```
 
-`LLM_BASE_URL` 可不带 `/v1`（Worker 会自动补全）。改完后重建/重启 Worker：`docker compose up -d --build worker`。桌面发消息即可；或 `pnpm smoke`（已不校验 FakeModel 固定文案）。`[file-demo]` / `[browser-demo]` 仍走 Computer 固定剧本；`[agent-file]` 走 FakeActionModel 受控循环；`[agent-llm]` 有 `LLM_API_KEY` 时用真模型产出结构化动作（无 key 回退 Fake 剧本）。
+`LLM_BASE_URL` 可不带 `/v1`（Worker 会自动补全）。改完后重建/重启 Worker：`docker compose up -d --build worker`（需先跑迁移 `0002_phase3`）。环境变量优先于数据库凭据。
+
+| 入口 | 行为 |
+|------|------|
+| 普通消息 | 流式聊天（Fake 或真模型） |
+| `[file-demo]` / `[browser-demo]` | Computer 固定剧本 |
+| `[agent-file]` | FakeActionModel 受控循环 + 预算 |
+| `[agent-llm]` | 有 key 时真模型 JSON 动作；无 key 回退 Fake 剧本 |
+| `sensitive/` 写入或敏感记忆 | 任务 `waiting_approval`；`POST /v1/tasks/:id/approvals` 批准记忆或拒绝 |
+| `POST /v1/skills` | 把已完成任务存为 **draft** Skill，不自动启用 |
+
+验收（测试库）：
+
+```sh
+export TEST_DATABASE_URL=postgres://vork:vork_test_only@127.0.0.1:55432/vork_test
+pnpm --filter @vork/contracts test
+pnpm --filter @vork/worker exec vitest run src/agent-loop.test.ts src/policy.test.ts src/phase3-helpers.test.ts src/action-model.test.ts
+pnpm --filter @vork/api exec vitest run src/routes/manage.test.ts
+```
 
 ## 测试与排查
 

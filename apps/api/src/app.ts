@@ -6,6 +6,7 @@ import { registerBotRoutes } from "./routes/bots.js";
 import { registerComputerRoutes, type ComputerProxyOptions } from "./routes/computer.js";
 import { registerConversationRoutes } from "./routes/conversations.js";
 import { registerCredentialRoutes } from "./routes/credentials.js";
+import { registerMemoryRoutes } from "./routes/memories.js";
 import { registerWorkspaceFileRoutes } from "./routes/files.js";
 import { registerSkillRoutes } from "./routes/skills.js";
 import { registerTaskListRoutes } from "./routes/tasks.js";
@@ -37,9 +38,10 @@ export function buildApp(dependencies: ApiDependencies): FastifyInstance {
   registerConversationRoutes(app, routeDependencies);
   registerTaskListRoutes(app, routeDependencies);
   registerTaskEventRoutes(app, routeDependencies);
-  registerSkillRoutes(app);
+  registerSkillRoutes(app, routeDependencies);
   registerWorkspaceFileRoutes(app);
-  registerCredentialRoutes(app);
+  registerCredentialRoutes(app, routeDependencies);
+  registerMemoryRoutes(app, routeDependencies);
   if (dependencies.computer) {
     registerComputerRoutes(app, routeDependencies, dependencies.computer);
   }
