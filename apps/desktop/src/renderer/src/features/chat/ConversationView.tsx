@@ -2,7 +2,7 @@ import type { Task } from "@vork/contracts";
 import { useNavigate } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { ChevronDown, Copy, LoaderCircle, Monitor, MoreHorizontal, Settings2, Trash2 } from "lucide-react";
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import {
@@ -23,6 +23,24 @@ import { useStickToBottom } from "./useStickToBottom.js";
 
 /** 对齐 Grok 文案键 AUV+TY：「思考中」（无省略号、无第二套轮换文案）。 */
 const THINKING_PHRASES = ["思考中"] as const;
+const SIDE_COMPUTER_MEDIA_QUERY = "(min-width: 640px)";
+
+function useSideComputerLayout(): boolean {
+  const [sideLayout, setSideLayout] = useState(() =>
+    typeof window.matchMedia === "function" ? window.matchMedia(SIDE_COMPUTER_MEDIA_QUERY).matches : true
+  );
+
+  useEffect(() => {
+    if (typeof window.matchMedia !== "function") return;
+    const mediaQuery = window.matchMedia(SIDE_COMPUTER_MEDIA_QUERY);
+    const updateLayout = () => setSideLayout(mediaQuery.matches);
+    updateLayout();
+    mediaQuery.addEventListener("change", updateLayout);
+    return () => mediaQuery.removeEventListener("change", updateLayout);
+  }, []);
+
+  return sideLayout;
+}
 
 function thinkingPhraseForTask(taskId: string | undefined): string {
   if (!taskId) return THINKING_PHRASES[0];
@@ -64,6 +82,7 @@ export function ConversationView({ conversationId, botName }: { conversationId: 
   const bottomRef = useRef<HTMLDivElement>(null);
   const { showJumpToLatest, onContentGrow, forceStick, jumpToLatest } = useStickToBottom(viewportRef);
   const deleteConversation = useDeleteConversationMutation();
+  const sideComputerLayout = useSideComputerLayout();
 
   const thinkingLabel = useMemo(() => thinkingPhraseForTask(activeTask?.id), [activeTask?.id]);
 
@@ -105,9 +124,9 @@ export function ConversationView({ conversationId, botName }: { conversationId: 
   const lastMessage = messages.length > 0 ? messages[messages.length - 1] : undefined;
   const showStandaloneThinking =
     Boolean(working && activeTask) && (!lastMessage || lastMessage.authorType === "user");
-  const showInlineThinking =
-    Boolean(working && activeTask && lastMessage?.authorType === "assistant") &&
-    !(lastMessage.content.trim().length > 0);
+  const lastMessageIsEmptyAssistant =
+    lastMessage?.authorType === "assistant" && lastMessage.content.trim().length === 0;
+  const showInlineThinking = Boolean(working && activeTask && lastMessageIsEmptyAssistant);
 
   return (
     <section className="flex min-h-0 flex-1 flex-col bg-background" aria-busy={connectionState === "loading"}>
@@ -224,7 +243,11 @@ export function ConversationView({ conversationId, botName }: { conversationId: 
                     }
 
                     return (
-                      <article className="message group/msg flex justify-start" key={message.id}>
+                      <article
+                        className="message group/msg flex justify-start"
+                        data-message-author="assistant"
+                        key={message.id}
+                      >
                         <div className="max-w-[min(92%,48rem)] min-w-0 flex-1">
                           {isLast && showInlineThinking && (
                             <ThinkingStatus label={thinkingLabel} className="mb-2" />
@@ -296,8 +319,8 @@ export function ConversationView({ conversationId, botName }: { conversationId: 
           </div>
         </div>
 
-        {computerOpen && (
-          <div className="hidden min-h-0 w-[min(42%,26rem)] shrink-0 sm:flex">
+        {computerOpen && sideComputerLayout && (
+          <div className="flex min-h-0 w-[min(42%,26rem)] shrink-0">
             <ComputerPanel
               api={api}
               taskId={activeTask?.id}
@@ -310,8 +333,8 @@ export function ConversationView({ conversationId, botName }: { conversationId: 
         )}
       </div>
 
-      {computerOpen && (
-        <div className="border-t border-border sm:hidden">
+      {computerOpen && !sideComputerLayout && (
+        <div className="border-t border-border">
           <ComputerPanel
             api={api}
             taskId={activeTask?.id}

@@ -45,7 +45,9 @@ async function notify(notifier: TaskNotifier, taskId: string): Promise<void> {
   }
 }
 
-function isToolAction(action: AgentAction): boolean {
+function isToolAction(
+  action: AgentAction
+): action is Extract<AgentAction, { type: "file.write" | "file.read" }> {
   return action.type === "file.write" || action.type === "file.read";
 }
 

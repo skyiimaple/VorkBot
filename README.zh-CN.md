@@ -14,7 +14,9 @@ pnpm smoke -- --file-demo   # 可选：再验 [file-demo]
 pnpm dev
 ```
 
-更完整的服务端口、冒烟步骤、退出码与真/假边界见 [`docs/handovers/2026-09-20-vork-local-stack-zh-CN.md`](docs/handovers/2026-09-20-vork-local-stack-zh-CN.md)。
+如果本机镜像已与当前源码一致，可用 `docker compose up -d --no-build` 直接启动；它不会重建或拉取应用镜像。镜像较旧时健康检查仍可能通过，但新接口不会自动出现在旧容器中，需通过对应功能测试确认。
+
+更完整的服务端口、冒烟步骤、退出码与真/假边界见 [`docs/handovers/2026-09-20-vork-local-stack-zh-CN.md`](docs/handovers/2026-09-20-vork-local-stack-zh-CN.md)。2026-09-28 的功能版 V1 基线验证结果与当前限制见 [`docs/handovers/2026-09-28-vork-functional-v1-foundation-status-zh-CN.md`](docs/handovers/2026-09-28-vork-functional-v1-foundation-status-zh-CN.md)。
 
 Compose 依次启动 PostgreSQL、Valkey、数据库迁移、Computer、API 和 Worker；API 只监听本机 `127.0.0.1:3000`，Computer 仅在 Compose 内网可达（`http://computer:8080`）。Electron 使用本机 API，客户端关闭后 Worker 仍在容器里运行。数据库、工作区与浏览器 Profile 存放在 Docker 命名卷中。Computer 默认 `VORK_MAX_SLOTS=3`、浏览器并发上限 2，并配置 `mem_limit: 4g` / `cpus: 2`。
 
