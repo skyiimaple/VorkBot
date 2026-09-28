@@ -182,6 +182,15 @@ export function createFakeVorkApi(): FakeVorkApi {
             ]
           }
         };
+      case "deleteConversation": {
+        const index = conversations.findIndex((item) => item.id === input.input.conversationId);
+        if (index >= 0) conversations.splice(index, 1);
+        messages.delete(input.input.conversationId);
+        return {
+          operation: "deleteConversation",
+          data: { conversationId: input.input.conversationId }
+        };
+      }
       default:
         throw new Error(`unsupported operation: ${(input as { operation: string }).operation}`);
     }

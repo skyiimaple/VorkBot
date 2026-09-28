@@ -162,4 +162,40 @@ describe("conversation routes", () => {
     ]);
     await failingApp.close();
   });
+
+  it("deletes a conversation and its messages/tasks", async () => {
+    const conversation = await createConversation();
+    const submit = await app.inject({
+      method: "POST",
+      url: `/v1/conversations/${conversation.id}/messages`,
+      payload: { content: "稍后删除" }
+    });
+    expect(submit.statusCode).toBe(202);
+
+    const response = await app.inject({
+      method: "DELETE",
+      url: `/v1/conversations/${conversation.id}`
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ conversationId: conversation.id });
+
+    const listed = await app.inject({ method: "GET", url: "/v1/conversations" });
+    expect(listed.json().conversations.find((item: { id: string }) => item.id === conversation.id)).toBeUndefined();
+
+    const messages = await app.inject({
+      method: "GET",
+      url: `/v1/conversations/${conversation.id}/messages`
+    });
+    expect(messages.statusCode).toBe(404);
+  });
+
+  it("returns not found when deleting a missing conversation", async () => {
+    const response = await app.inject({
+      method: "DELETE",
+      url: "/v1/conversations/conversation_missing"
+    });
+    expect(response.statusCode).toBe(404);
+    expect(response.json()).toEqual({ error: "Conversation not found" });
+  });
 });

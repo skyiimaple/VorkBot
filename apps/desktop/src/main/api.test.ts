@@ -168,4 +168,24 @@ describe("credential requests", () => {
     expect(String(fetchImplementation.mock.calls[0]?.[0])).toContain("/v1/credentials");
     expect(fetchImplementation.mock.calls[0]?.[1]).toMatchObject({ method: "DELETE" });
   });
+
+  it("maps deleteConversation to DELETE /v1/conversations/:id", async () => {
+    const handlers = new Map<string, (...args: any[]) => unknown>();
+    const ipcMain = { handle: vi.fn((channel, handler) => handlers.set(channel, handler)), on: vi.fn() };
+    const fetchImplementation = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ conversationId: "conversation_1" }), {
+        status: 200,
+        headers: { "content-type": "application/json" }
+      })
+    );
+    registerApiIpc(ipcMain as never, fetchImplementation as never, 0);
+
+    const result = await handlers.get("vork:request")?.(
+      {},
+      { operation: "deleteConversation", input: { conversationId: "conversation_1" } }
+    );
+    expect(String(fetchImplementation.mock.calls[0]?.[0])).toContain("/v1/conversations/conversation_1");
+    expect(fetchImplementation.mock.calls[0]?.[1]).toMatchObject({ method: "DELETE" });
+    expect(result).toMatchObject({ operation: "deleteConversation", data: { conversationId: "conversation_1" } });
+  });
 });

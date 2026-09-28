@@ -68,6 +68,27 @@ export function useCreateConversationMutation() {
   });
 }
 
+export function useDeleteConversationMutation() {
+  const api = useVorkApi();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (conversationId: string) => {
+      const response = await api.request({
+        operation: "deleteConversation",
+        input: { conversationId }
+      });
+      if (response.operation !== "deleteConversation") throw new Error("Unexpected deleteConversation response");
+      return response.data.conversationId;
+    },
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: workspaceKeys.conversations() }),
+        queryClient.invalidateQueries({ queryKey: workspaceKeys.bots() })
+      ]);
+    }
+  });
+}
+
 export function findConversationForBot(conversations: Conversation[] | undefined, bot: Bot): Conversation | undefined {
   return conversations?.find((item) => item.botId === bot.id);
 }

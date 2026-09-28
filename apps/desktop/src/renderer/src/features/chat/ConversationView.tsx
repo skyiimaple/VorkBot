@@ -12,17 +12,17 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger
 } from "@/components/ui/dropdown-menu";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import { useUiStore } from "@/stores/ui-store";
-import { workspaceKeys } from "../workspace/useWorkspace.js";
+import { workspaceKeys, useDeleteConversationMutation } from "../workspace/useWorkspace.js";
 import { ComputerPanel } from "../computer/ComputerPanel.js";
 import { AssistantMessageBody } from "./AssistantMessageBody.js";
 import { MessageComposer } from "./MessageComposer.js";
 import { useConversation } from "./useConversation.js";
 import { useStickToBottom } from "./useStickToBottom.js";
 
-const THINKING_PHRASES = ["思考中…", "让我想想…"] as const;
+/** 对齐 Grok 文案键 AUV+TY：「思考中」（无省略号、无第二套轮换文案）。 */
+const THINKING_PHRASES = ["思考中"] as const;
 
 function thinkingPhraseForTask(taskId: string | undefined): string {
   if (!taskId) return THINKING_PHRASES[0];
@@ -63,6 +63,7 @@ export function ConversationView({ conversationId, botName }: { conversationId: 
   const viewportRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const { showJumpToLatest, onContentGrow, forceStick, jumpToLatest } = useStickToBottom(viewportRef);
+  const deleteConversation = useDeleteConversationMutation();
 
   const thinkingLabel = useMemo(() => thinkingPhraseForTask(activeTask?.id), [activeTask?.id]);
 
@@ -74,6 +75,17 @@ export function ConversationView({ conversationId, botName }: { conversationId: 
   useEffect(() => {
     onContentGrow();
   }, [messages, activeTask?.status, activeSlotId, working, onContentGrow]);
+
+  async function handleDeleteConversation() {
+    if (!window.confirm(`永久删除「${botName}」的对话？此操作不可恢复。`)) return;
+    try {
+      await deleteConversation.mutateAsync(conversationId);
+      setComputerOpen(conversationId, false);
+      await navigate({ to: "/" });
+    } catch {
+      window.alert("删除失败，请稍后重试");
+    }
+  }
 
   async function handleSend(content: string) {
     forceStick();
@@ -99,77 +111,89 @@ export function ConversationView({ conversationId, botName }: { conversationId: 
 
   return (
     <section className="flex min-h-0 flex-1 flex-col bg-background" aria-busy={connectionState === "loading"}>
-      <header className="app-region-drag flex items-center justify-between gap-3 border-b border-border/80 bg-card/80 px-5 py-2.5 backdrop-blur-sm sm:px-7">
-        <div className="flex w-full items-center justify-between gap-3">
-          <div className="flex min-w-0 items-center gap-2.5">
-            <Avatar className="size-7">
-              <AvatarFallback className="bg-primary-soft text-[11px] font-semibold text-primary">
-                {botName.slice(0, 1).toUpperCase()}
-              </AvatarFallback>
-            </Avatar>
-            <div className="min-w-0">
-              <h1 className="truncate text-[14px] font-semibold tracking-tight">{botName}</h1>
+      <header className="app-region-drag flex h-11 shrink-0 items-center justify-between gap-3 border-b border-border/60 bg-card/90 px-4 backdrop-blur-sm sm:px-5">
+        <div className="flex min-w-0 items-center gap-2.5">
+          <Avatar className="size-7 rounded-[8px]">
+            <AvatarFallback className="rounded-[8px] bg-primary-soft text-[11px] font-semibold text-primary">
+              {botName.slice(0, 1).toUpperCase()}
+            </AvatarFallback>
+          </Avatar>
+          <div className="min-w-0">
+            <h1 className="truncate text-[14px] font-semibold tracking-tight">{botName}</h1>
+            {connectionState === "loading" || working ? (
               <p className="truncate text-[11px] text-muted-foreground">
                 {headerStatusLabel(connectionState, activeTask, thinkingLabel)}
               </p>
-            </div>
+            ) : null}
           </div>
-          <div className="header-actions app-region-no-drag flex items-center gap-1.5" aria-label="对话操作">
-            <Button
-              type="button"
-              size="sm"
-              variant={computerOpen ? "secondary" : "outline"}
-              aria-pressed={computerOpen}
-              onClick={() => toggleComputerOpen(conversationId)}
-              className={cn(
-                "h-8 gap-1.5 rounded-lg px-2.5 text-[12px] shadow-none",
-                computerOpen && "border-primary/25 bg-primary-soft text-primary hover:bg-primary-soft-hover"
-              )}
-            >
-              <Monitor className="size-3.5" />
-              电脑
-            </Button>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon-sm"
-                  aria-label="更多操作"
-                  title="更多操作"
-                  className="size-8 rounded-lg"
-                >
-                  <MoreHorizontal className="size-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-52">
-                <DropdownMenuItem onSelect={() => setSettingsOpen(true)}>
-                  <Settings2 className="size-3.5" />
-                  Bot 设置
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onSelect={() => {
-                    void navigator.clipboard?.writeText(conversationId);
-                  }}
-                >
-                  <Copy className="size-3.5" />
-                  复制对话 ID
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem disabled title="后端硬删尚未接入">
-                  <Trash2 className="size-3.5" />
-                  删除（未接入）
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
+        </div>
+        <div className="header-actions app-region-no-drag flex items-center gap-0.5" aria-label="对话操作">
+          <Button
+            type="button"
+            size="icon-sm"
+            variant="ghost"
+            aria-label="电脑"
+            aria-pressed={computerOpen}
+            title="电脑"
+            onClick={() => toggleComputerOpen(conversationId)}
+            className={cn(
+              "size-8 rounded-lg text-muted-foreground shadow-none hover:text-foreground",
+              computerOpen && "bg-primary-soft text-primary hover:bg-primary-soft-hover hover:text-primary"
+            )}
+          >
+            <Monitor className="size-4" />
+          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                aria-label="更多操作"
+                title="更多操作"
+                className="size-8 rounded-lg text-muted-foreground hover:text-foreground"
+              >
+                <MoreHorizontal className="size-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-52">
+              <DropdownMenuItem onSelect={() => setSettingsOpen(true)}>
+                <Settings2 className="size-3.5" />
+                Bot 设置
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onSelect={() => {
+                  void navigator.clipboard?.writeText(conversationId);
+                }}
+              >
+                <Copy className="size-3.5" />
+                复制对话 ID
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                variant="destructive"
+                disabled={deleteConversation.isPending}
+                onSelect={() => {
+                  void handleDeleteConversation();
+                }}
+              >
+                <Trash2 className="size-3.5" />
+                删除
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </header>
 
       <div className="flex min-h-0 flex-1">
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           <div className="relative min-h-0 flex-1">
-            <ScrollArea className="messages scrollbar-grok absolute inset-0" aria-live="polite" viewportRef={viewportRef}>
+            {/* 原生 overflow，避免 Radix ScrollArea 在 absolute 布局下裁切却滚不动 */}
+            <div
+              ref={viewportRef}
+              className="messages scrollbar-grok absolute inset-0 overflow-x-hidden overflow-y-auto"
+              aria-live="polite"
+            >
               <div className="flex w-full flex-col gap-4 px-5 py-5 sm:px-7">
                 {messages.length === 0 ? (
                   <div className="m-auto flex max-w-md flex-col items-center gap-2 py-20 text-center">
@@ -189,8 +213,8 @@ export function ConversationView({ conversationId, botName }: { conversationId: 
                     if (message.authorType === "user") {
                       return (
                         <article className="message user group/msg flex justify-end" key={message.id}>
-                          <div className="max-w-[min(78%,42rem)]">
-                            <div className="rounded-2xl rounded-br-md bg-user-bubble px-3.5 py-2.5 text-[14px] leading-relaxed">
+                          <div className="max-w-[min(72%,36rem)]">
+                            <div className="rounded-[18px] bg-user-bubble px-3.5 py-2.5 text-[14px] leading-relaxed text-foreground">
                               <p className="m-0 whitespace-pre-wrap">{message.content}</p>
                             </div>
                             <MessageTimestamp iso={message.createdAt} align="end" />
@@ -200,13 +224,8 @@ export function ConversationView({ conversationId, botName }: { conversationId: 
                     }
 
                     return (
-                      <article className="message group/msg flex justify-start gap-2.5" key={message.id}>
-                        <Avatar className="mt-0.5 size-6 shrink-0">
-                          <AvatarFallback className="bg-card text-[10px] font-semibold text-muted-foreground ring-1 ring-border">
-                            {botName.slice(0, 1).toUpperCase()}
-                          </AvatarFallback>
-                        </Avatar>
-                        <div className="max-w-[min(82%,46rem)] min-w-0 flex-1 pt-0.5">
+                      <article className="message group/msg flex justify-start" key={message.id}>
+                        <div className="max-w-[min(92%,48rem)] min-w-0 flex-1">
                           {isLast && showInlineThinking && (
                             <ThinkingStatus label={thinkingLabel} className="mb-2" />
                           )}
@@ -218,7 +237,7 @@ export function ConversationView({ conversationId, botName }: { conversationId: 
                           )}
                           {(message.content.trim().length > 0 || !(isLast && working)) && (
                             <div
-                              className="rounded-2xl bg-agent-bubble px-3.5 py-2.5 text-[14px] leading-relaxed"
+                              className="rounded-[18px] bg-agent-bubble px-3.5 py-2.5 text-[14px] leading-[1.65] text-foreground"
                               data-assistant-markdown="true"
                               data-assistant-animate={message.id.startsWith("stream-") ? "true" : "false"}
                             >
@@ -237,13 +256,8 @@ export function ConversationView({ conversationId, botName }: { conversationId: 
                 )}
 
                 {showStandaloneThinking && (
-                  <article className="message flex justify-start gap-2.5">
-                    <Avatar className="mt-0.5 size-6 shrink-0">
-                      <AvatarFallback className="bg-card text-[10px] font-semibold text-muted-foreground ring-1 ring-border">
-                        {botName.slice(0, 1).toUpperCase()}
-                      </AvatarFallback>
-                    </Avatar>
-                    <div className="flex min-h-6 max-w-[min(82%,46rem)] flex-col justify-center gap-1.5 pt-0.5">
+                  <article className="message flex justify-start">
+                    <div className="flex min-h-6 max-w-[min(92%,48rem)] flex-col justify-center gap-1.5">
                       <ThinkingStatus label={thinkingLabel} />
                       {activeSlotId ? (
                         <ComputerHint onOpen={() => setComputerOpen(conversationId, true)} />
@@ -253,7 +267,7 @@ export function ConversationView({ conversationId, botName }: { conversationId: 
                 )}
                 <div ref={bottomRef} aria-hidden className="h-px w-full shrink-0" />
               </div>
-            </ScrollArea>
+            </div>
 
             {showJumpToLatest ? (
               <div className="pointer-events-none absolute inset-x-0 bottom-3 z-10 flex justify-center">
@@ -265,14 +279,15 @@ export function ConversationView({ conversationId, botName }: { conversationId: 
                   className="pointer-events-auto h-8 gap-1 rounded-full border border-border/80 bg-card/95 px-3 text-[12px] font-medium shadow-md backdrop-blur-sm"
                 >
                   <ChevronDown className="size-3.5" aria-hidden />
-                  最新消息
+                  新消息
                 </Button>
               </div>
             ) : null}
           </div>
 
-          <div className="bg-gradient-to-t from-background from-55% via-background to-transparent px-5 pt-1 pb-4 sm:px-7">
+          <div className="bg-gradient-to-t from-background from-55% via-background to-transparent px-4 pt-1 pb-4 sm:px-6">
             <MessageComposer
+              botName={botName}
               onSend={handleSend}
               onStop={cancelActiveTask}
               working={Boolean(working)}

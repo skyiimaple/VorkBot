@@ -95,12 +95,34 @@
     {
       "id": "token.bubble-agent",
       "category": "tokens",
-      "title": "助手气泡 #eeeeee",
+      "title": "助手气泡（相对底色提高对比）",
       "severity": "fail",
-      "grok": { "includes": ["#eeeeee"] },
+      "grok": { "includes": ["bubble"] },
       "vork": {
         "files": ["styles/app.css"],
-        "includes": ["--sand-fill-bubble-agent: #eeeeee"]
+        "includes": ["--sand-fill-bubble-agent: #e4e4e4"]
+      }
+    },
+    {
+      "id": "token.bubble-user",
+      "category": "tokens",
+      "title": "用户气泡（浅蓝提高对比）",
+      "severity": "fail",
+      "grok": { "includes": ["bubble"] },
+      "vork": {
+        "files": ["styles/app.css"],
+        "includes": ["--sand-fill-bubble-user: #d4e6f7"]
+      }
+    },
+    {
+      "id": "chat.both-bubbles",
+      "category": "chat",
+      "title": "用户与助手消息均带气泡",
+      "severity": "fail",
+      "grok": { "includes": ["bubble"] },
+      "vork": {
+        "files": ["features/chat/ConversationView.tsx"],
+        "includes": ["bg-user-bubble", "bg-agent-bubble"]
       }
     },
     {
@@ -279,13 +301,12 @@
     {
       "id": "chat.stick-threshold",
       "category": "chat",
-      "title": "贴底阈值数量级（Grok≈4px；Vork 当前 96，差异需人工确认是否故意）",
-      "severity": "warn",
+      "title": "贴底阈值对齐 Grok nearBottomThresholdPx:4",
+      "severity": "fail",
       "grok": { "includes": ["nearBottomThresholdPx:4"] },
       "vork": {
-        "files": ["features/chat/ConversationView.tsx"],
-        "includes": ["STICK_THRESHOLD_PX = 4"],
-        "forbidden": []
+        "files": ["features/chat/useStickToBottom.ts"],
+        "includes": ["STICK_THRESHOLD_PX = 4"]
       }
     },
     {
@@ -313,16 +334,44 @@
     {
       "id": "chat.stick-to-bottom",
       "category": "chat",
-      "title": "聊天 stick-to-bottom（阈值 + 阈值判断）",
+      "title": "聊天 stick-to-bottom（阈值 + 距离计算 + 跳转文案）",
       "severity": "fail",
-      "grok": { "includes": ["nearBottomThresholdPx"] },
+      "grok": { "includesAll": ["nearBottomThresholdPx", "新消息"] },
+      "vork": {
+        "files": [
+          "features/chat/useStickToBottom.ts",
+          "features/chat/ConversationView.tsx"
+        ],
+        "includesAll": [
+          "STICK_THRESHOLD_PX",
+          "scrollHeight - el.scrollTop - el.clientHeight",
+          "useStickToBottom",
+          "新消息"
+        ],
+        "forbidden": ["最新消息", "STICK_THRESHOLD_PX = 96"]
+      }
+    },
+    {
+      "id": "chat.thinking-copy",
+      "category": "chat",
+      "title": "思考中文案对齐 Grok「思考中」",
+      "severity": "fail",
+      "grok": { "includes": ["思考中"] },
       "vork": {
         "files": ["features/chat/ConversationView.tsx"],
-        "includesAll": [
-          "stickToBottomRef",
-          "STICK_THRESHOLD_PX",
-          "scrollHeight - viewport.scrollTop - viewport.clientHeight"
-        ]
+        "includes": ["思考中"],
+        "forbidden": ["思考中…", "让我想想"]
+      }
+    },
+    {
+      "id": "composer.placeholder",
+      "category": "composer",
+      "title": "Composer 空态 placeholder 对齐 Grok（给 {Bot} 发消息）",
+      "severity": "fail",
+      "grok": { "includes": ["给 ", " 发消息"] },
+      "vork": {
+        "files": ["features/chat/MessageComposer.tsx"],
+        "includes": ["给 ${recipient} 发消息"]
       }
     },
     {

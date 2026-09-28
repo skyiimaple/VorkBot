@@ -1,4 +1,4 @@
-import { ArrowUp, FileIcon, ImageIcon, Paperclip, Square, X } from "lucide-react";
+import { ArrowUp, FileIcon, ImageIcon, Plus, Square, X } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -13,11 +13,13 @@ type PendingAttachment = {
 };
 
 export function MessageComposer({
+  botName,
   onSend,
   onStop,
   disabled,
   working
 }: {
+  botName?: string;
   onSend: (content: string) => Promise<void>;
   onStop?: () => Promise<void> | void;
   disabled?: boolean;
@@ -33,20 +35,25 @@ export function MessageComposer({
   const dragDepth = useRef(0);
   const attachInputId = useId();
 
+  const recipient = botName?.trim() || "Bot";
+  const idlePlaceholder = `给 ${recipient} 发消息`;
+
   useEffect(() => {
     const el = textareaRef.current;
     if (!el) return;
     el.style.height = "0px";
-    el.style.height = `${Math.min(el.scrollHeight, 192)}px`;
+    el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
   }, [content]);
 
   function addFiles(fileList: FileList | File[]) {
-    const next = Array.from(fileList).slice(0, 8).map((file) => ({
-      id: `${file.name}-${file.size}-${file.lastModified}-${Math.random().toString(36).slice(2, 7)}`,
-      name: file.name,
-      size: file.size,
-      kind: file.type.startsWith("image/") ? ("image" as const) : ("file" as const)
-    }));
+    const next = Array.from(fileList)
+      .slice(0, 8)
+      .map((file) => ({
+        id: `${file.name}-${file.size}-${file.lastModified}-${Math.random().toString(36).slice(2, 7)}`,
+        name: file.name,
+        size: file.size,
+        kind: file.type.startsWith("image/") ? ("image" as const) : ("file" as const)
+      }));
     if (next.length === 0) return;
     setAttachments((current) => [...current, ...next].slice(0, 8));
   }
@@ -119,19 +126,19 @@ export function MessageComposer({
     >
       <div
         className={cn(
-          "relative rounded-3xl border bg-card px-2 pt-2 pb-2 shadow-composer transition",
-          "focus-within:border-primary/35 focus-within:shadow-[0_0_0_3px_var(--primary-soft)]",
+          "relative rounded-[28px] border border-border/70 bg-card px-2 py-2 shadow-composer transition",
+          "focus-within:border-primary/30 focus-within:shadow-[0_0_0_3px_var(--primary-soft)]",
           dragging && "border-primary/50 bg-primary-soft/40"
         )}
       >
         {dragging && (
-          <div className="pointer-events-none absolute inset-2 z-10 flex items-center justify-center rounded-2xl border border-dashed border-primary/40 bg-card/90">
+          <div className="pointer-events-none absolute inset-2 z-10 flex items-center justify-center rounded-[22px] border border-dashed border-primary/40 bg-card/90">
             <p className="text-[13px] font-medium text-primary">松开以添加附件</p>
           </div>
         )}
 
         {attachments.length > 0 && (
-          <ul className="mb-1 flex flex-wrap gap-1.5 px-2 pt-1" aria-label="待发送附件">
+          <ul className="mb-1 flex flex-wrap gap-1.5 px-2 pt-0.5" aria-label="待发送附件">
             {attachments.map((item) => (
               <li
                 key={item.id}
@@ -158,76 +165,50 @@ export function MessageComposer({
           </ul>
         )}
 
-        <label className="sr-only" htmlFor="message">
-          消息
-        </label>
-        <Textarea
-          ref={textareaRef}
-          id="message"
-          value={content}
-          disabled={disabled || sending}
-          onChange={(event) => setContent(event.target.value)}
-          onKeyDown={onKeyDown}
-          placeholder={working ? "生成中…可点停止，或发送「停 / 取消」" : "发消息给 Bot，或拖入文件"}
-          rows={1}
-          className="max-h-48 min-h-[2.5rem] resize-none border-0 bg-transparent px-3 py-2 text-[14px] leading-relaxed shadow-none focus-visible:ring-0"
-        />
-        <div className="flex items-center justify-between gap-2 px-1.5 pb-0.5">
-          <div className="flex items-center gap-0.5">
-            <input
-              ref={fileInputRef}
-              id={attachInputId}
-              type="file"
-              multiple
-              className="sr-only"
-              onChange={(event) => {
-                if (event.target.files?.length) addFiles(event.target.files);
-                event.target.value = "";
-              }}
-            />
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon-sm"
-                  aria-label="添加附件"
-                  disabled={disabled || sending}
-                  className="size-8 rounded-full text-muted-foreground"
-                  onClick={() => fileInputRef.current?.click()}
-                >
-                  <Paperclip className="size-4" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>添加附件</TooltipContent>
-            </Tooltip>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon-sm"
-                  aria-label="添加图片"
-                  disabled={disabled || sending}
-                  className="size-8 rounded-full text-muted-foreground"
-                  onClick={() => {
-                    if (!fileInputRef.current) return;
-                    fileInputRef.current.accept = "image/*";
-                    fileInputRef.current.click();
-                    window.setTimeout(() => {
-                      if (fileInputRef.current) fileInputRef.current.accept = "";
-                    }, 0);
-                  }}
-                >
-                  <ImageIcon className="size-4" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>添加图片</TooltipContent>
-            </Tooltip>
-            <p className="ml-1 hidden text-[11px] text-muted-foreground sm:inline">
-              {working ? "可说「停」取消 · Enter 仍可发指令" : "Enter 发送 · Shift+Enter 换行"}
-            </p>
-          </div>
+        <div className="flex items-end gap-1.5">
+          <input
+            ref={fileInputRef}
+            id={attachInputId}
+            type="file"
+            multiple
+            className="sr-only"
+            onChange={(event) => {
+              if (event.target.files?.length) addFiles(event.target.files);
+              event.target.value = "";
+            }}
+          />
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                aria-label="添加附件"
+                disabled={disabled || sending}
+                className="mb-0.5 size-9 shrink-0 rounded-full text-muted-foreground hover:bg-muted/80"
+                onClick={() => fileInputRef.current?.click()}
+              >
+                <Plus className="size-4" strokeWidth={2} />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>添加附件</TooltipContent>
+          </Tooltip>
+
+          <label className="sr-only" htmlFor="message">
+            消息
+          </label>
+          <Textarea
+            ref={textareaRef}
+            id="message"
+            value={content}
+            disabled={disabled || sending}
+            onChange={(event) => setContent(event.target.value)}
+            onKeyDown={onKeyDown}
+            placeholder={working ? "生成中…可点停止，或发送「停 / 取消」" : idlePlaceholder}
+            rows={1}
+            className="max-h-40 min-h-[2.25rem] flex-1 resize-none border-0 bg-transparent px-1 py-2 text-[15px] leading-relaxed shadow-none focus-visible:ring-0"
+          />
+
           {showStop ? (
             <Button
               type="button"
@@ -236,7 +217,7 @@ export function MessageComposer({
               aria-label="停止"
               title="停止生成"
               onClick={() => void stop()}
-              className="size-8 rounded-full bg-foreground text-background shadow-none hover:bg-foreground/90"
+              className="mb-0.5 size-9 shrink-0 rounded-full bg-foreground text-background shadow-none hover:bg-foreground/90"
             >
               <Square className="size-3.5 fill-current" />
             </Button>
@@ -247,11 +228,13 @@ export function MessageComposer({
               disabled={!canSend}
               aria-label="发送"
               className={cn(
-                "size-8 rounded-full shadow-none",
-                canSend ? "bg-primary text-primary-foreground hover:bg-primary/90" : "bg-muted text-muted-foreground"
+                "mb-0.5 size-9 shrink-0 rounded-full shadow-none",
+                canSend
+                  ? "bg-foreground text-background hover:bg-foreground/90"
+                  : "bg-muted text-muted-foreground"
               )}
             >
-              <ArrowUp className="size-4" />
+              <ArrowUp className="size-4" strokeWidth={2.25} />
             </Button>
           )}
         </div>

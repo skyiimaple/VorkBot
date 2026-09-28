@@ -38,6 +38,12 @@ export const ApiRequestSchema = z.discriminatedUnion("operation", [
       operation: z.literal("deleteCredential"),
       input: z.object({ provider: z.literal("openai-compatible").default("openai-compatible") }).strict()
     })
+    .strict(),
+  z
+    .object({
+      operation: z.literal("deleteConversation"),
+      input: z.object({ conversationId: IdentifierSchema }).strict()
+    })
     .strict()
 ]);
 
@@ -54,7 +60,13 @@ export const ApiResponseSchema = z.discriminatedUnion("operation", [
   z.object({ operation: z.literal("listFiles"), data: ListWorkspaceFilesResponseSchema }).strict(),
   z.object({ operation: z.literal("listCredentials"), data: ListModelCredentialsResponseSchema }).strict(),
   z.object({ operation: z.literal("upsertCredential"), data: ListModelCredentialsResponseSchema }).strict(),
-  z.object({ operation: z.literal("deleteCredential"), data: ListModelCredentialsResponseSchema }).strict()
+  z.object({ operation: z.literal("deleteCredential"), data: ListModelCredentialsResponseSchema }).strict(),
+  z
+    .object({
+      operation: z.literal("deleteConversation"),
+      data: z.object({ conversationId: IdentifierSchema }).strict()
+    })
+    .strict()
 ]);
 
 export const TaskSubscriptionSchema = z.object({

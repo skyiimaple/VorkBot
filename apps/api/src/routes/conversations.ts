@@ -11,6 +11,7 @@ const CreateConversationResponseSchema = z.object({ conversation: ConversationSc
 const ListMessagesResponseSchema = z.object({ messages: z.array(MessageSchema) });
 const ListConversationsResponseSchema = z.object({ conversations: z.array(ConversationSchema) });
 const SubmitMessageResponseSchema = z.object({ message: MessageSchema, task: TaskSchema });
+const DeleteConversationResponseSchema = z.object({ conversationId: z.string().trim().min(1) });
 const ErrorResponseSchema = z.object({ error: z.string().min(1) });
 
 export function registerConversationRoutes(app: FastifyInstance, dependencies: ApiDependencies): void {
@@ -61,5 +62,17 @@ export function registerConversationRoutes(app: FastifyInstance, dependencies: A
       return reply.code(503).send(TaskPublicationFailureResponseSchema.parse(result.response));
     }
     return reply.code(202).send(SubmitMessageResponseSchema.parse(result));
+  });
+
+  app.delete("/v1/conversations/:id", async (request, reply) => {
+    const { id } = ConversationParamsSchema.parse(request.params);
+    const deleted = await dependencies.repositories.deleteConversation({
+      userId: request.userId,
+      conversationId: id
+    });
+    if (!deleted) {
+      return reply.code(404).send(ErrorResponseSchema.parse({ error: "Conversation not found" }));
+    }
+    return DeleteConversationResponseSchema.parse({ conversationId: id });
   });
 }

@@ -39,11 +39,11 @@ function makeViewport(partial: {
 
 describe("isNearBottom / distanceFromBottom", () => {
   it("treats within threshold as near-bottom", () => {
-    const el = { scrollHeight: 1000, scrollTop: 880, clientHeight: 100 };
-    expect(distanceFromBottom(el)).toBe(20);
+    const el = { scrollHeight: 1000, scrollTop: 896, clientHeight: 100 };
+    expect(distanceFromBottom(el)).toBe(4);
     expect(isNearBottom(el)).toBe(true);
-    expect(isNearBottom(el, 10)).toBe(false);
-    expect(STICK_THRESHOLD_PX).toBeGreaterThanOrEqual(64);
+    expect(isNearBottom(el, 3)).toBe(false);
+    expect(STICK_THRESHOLD_PX).toBe(4);
   });
 
   it("treats far-from-bottom as not stuck", () => {

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 
-/** 距底部小于该阈值时视为 near-bottom，内容增长应 stick。 */
-export const STICK_THRESHOLD_PX = 96;
+/** 距底部小于该阈值时视为 near-bottom，内容增长应 stick（对齐 Grok nearBottomThresholdPx:4）。 */
+export const STICK_THRESHOLD_PX = 4;
 
 export type ScrollMetrics = Pick<HTMLElement, "scrollHeight" | "scrollTop" | "clientHeight">;
 
@@ -16,7 +16,7 @@ export function isNearBottom(el: ScrollMetrics, thresholdPx: number = STICK_THRE
 /**
  * 对话列表 stick-to-bottom：
  * - near-bottom 时内容增长自动贴底
- * - 用户上翻时不抢滚动，露出「最新消息」入口
+ * - 用户上翻时不抢滚动，露出「新消息」入口
  * - jumpToLatest 平滑滚到底并恢复 stick
  */
 export function useStickToBottom(viewportRef: RefObject<HTMLElement | null>) {
@@ -114,7 +114,7 @@ export function useStickToBottom(viewportRef: RefObject<HTMLElement | null>) {
     };
   }, [syncNearBottom, viewportRef]);
 
-  // 内容高度变化（打字机 / Markdown 切換）时：stick 则跟滚，否则只保持「最新消息」按钮
+  // 内容高度变化（打字机 / Markdown 切換）时：stick 则跟滚，否则只保持「新消息」按钮
   useEffect(() => {
     const viewport = viewportRef.current;
     if (!viewport || typeof ResizeObserver === "undefined") return;

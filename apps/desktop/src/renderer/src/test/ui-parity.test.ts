@@ -67,9 +67,28 @@ describe("ui parity (static, Vork-only)", () => {
     expect(stick).toContain("STICK_THRESHOLD_PX");
     expect(stick).toContain("showJumpToLatest");
     expect(chat).toContain("useStickToBottom");
-    expect(chat).toContain("最新消息");
+    expect(chat).toContain("新消息");
+    expect(chat).toContain("思考中");
+    expect(chat).not.toContain("最新消息");
+    expect(chat).not.toContain("让我想想");
     expect(chat).toContain("scrollbar-grok");
+    expect(chat).toContain("overflow-y-auto");
+    expect(chat).toContain("bg-user-bubble");
+    expect(chat).toContain("bg-agent-bubble");
     expect(chat).toContain("开始使用");
+  });
+
+  it("composer placeholder 对齐 Grok nltiqa（给 {Bot} 发消息）", () => {
+    const composer = readRel("features/chat/MessageComposer.tsx");
+    expect(composer).toContain("`给 ${recipient} 发消息`");
+    expect(composer).toContain('aria-label="添加附件"');
+    expect(composer).toContain("<Plus");
+  });
+
+  it("stick threshold 对齐 Grok nearBottomThresholdPx:4", () => {
+    const stick = readRel("features/chat/useStickToBottom.ts");
+    expect(stick).toContain("STICK_THRESHOLD_PX = 4");
+    expect(stick).toContain("scrollHeight - el.scrollTop - el.clientHeight");
   });
 
   it("CSS tokens 与 scrollbar-grok", () => {
@@ -98,6 +117,7 @@ describe("ui parity (static, Vork-only)", () => {
     expect(sidebar).not.toContain("MoreHorizontal");
     expect(sidebar).toContain("onNewSection");
     expect(sidebar).toContain("移至新分组");
+    expect(sidebar).toContain("relativePreview");
     expect(css).toContain("--sand-fill-secondary-hover");
     expect(css).toContain("--sand-text-tertiary");
     expect(css).toContain("--sand-titlebar-block");
@@ -133,12 +153,16 @@ describe("ui parity (static, Vork-only)", () => {
     expect(css).toContain('body[data-sidebar-resizing="true"]');
   });
 
-  it("composer 与首页空态", () => {
+  it("composer 与对话顶栏对齐 Grok", () => {
     const composer = readRel("features/chat/MessageComposer.tsx");
+    const chat = readRel("features/chat/ConversationView.tsx");
     const home = readRel("routes/HomePage.tsx");
-    expect(composer).toContain("Enter 发送");
-    expect(composer).toContain("rounded-3xl");
+    expect(composer).toContain("rounded-[28px]");
     expect(composer).toContain('aria-label="停止"');
+    expect(composer).toContain("botName");
+    expect(chat).toContain("botName={botName}");
+    expect(chat).toContain('aria-label="电脑"');
+    expect(chat).not.toContain(">电脑</");
     expect(home).toContain("创建你的第一个 Bot");
   });
 });

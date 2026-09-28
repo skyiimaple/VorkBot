@@ -121,6 +121,11 @@ function apiRequestDetails(request: ApiRequest): { path: string; method: "GET" |
       return { path: "/v1/credentials", method: "PUT", body: request.input };
     case "deleteCredential":
       return { path: "/v1/credentials", method: "DELETE", body: request.input };
+    case "deleteConversation":
+      return {
+        path: `/v1/conversations/${encodeURIComponent(request.input.conversationId)}`,
+        method: "DELETE"
+      };
   }
 }
 

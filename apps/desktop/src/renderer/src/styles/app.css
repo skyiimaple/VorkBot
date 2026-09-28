@@ -19,8 +19,9 @@
   --sand-fill-secondary-hover: #7777772b;
   --sand-fill-ghost-hover: #77777717;
   --sand-fill-ghost-selected: #7777772b;
-  --sand-fill-bubble-agent: #eeeeee;
-  --sand-fill-bubble-user: #e9f2fb;
+  /* 相对 --sand-bg-subtle(#f7f7f7) 提高气泡对比，避免灰上灰看不清 */
+  --sand-fill-bubble-agent: #e4e4e4;
+  --sand-fill-bubble-user: #d4e6f7;
   --sand-scrollbar: #14141426;
   --sand-text-tertiary: #1414149c;
   /* Grok mac shell: titlebar-block 44px + traffic-light inset 72px */
@@ -39,7 +40,7 @@
   --secondary: var(--sand-bg-tertiary);
   --secondary-foreground: var(--sand-text-primary);
   --muted: var(--sand-bg-tertiary);
-  --muted-foreground: color-mix(in srgb, #141414 60%, transparent);
+  --muted-foreground: color-mix(in srgb, #141414 68%, transparent);
   --accent: var(--sand-fill-ghost-hover);
   --accent-foreground: var(--sand-text-primary);
   --destructive: #c21d2e;

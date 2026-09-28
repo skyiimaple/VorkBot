@@ -14,6 +14,7 @@ import {
   Trash2
 } from "lucide-react";
 import { useEffect, useMemo, useState, type ComponentProps } from "react";
+import { useNavigate } from "@tanstack/react-router";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import {
@@ -27,6 +28,7 @@ import {
   ContextMenuSubTrigger,
   ContextMenuTrigger
 } from "@/components/ui/context-menu";
+import { useDeleteConversationMutation } from "@/features/workspace/useWorkspace";
 import {
   Dialog,
   DialogContent,
@@ -179,8 +181,25 @@ export function Sidebar({
   const moveBotToSection = useUiStore((state) => state.moveBotToSection);
   const moveSection = useUiStore((state) => state.moveSection);
   const setSettingsOpen = useUiStore((state) => state.setSettingsOpen);
+  const setComputerOpen = useUiStore((state) => state.setComputerOpen);
+  const navigate = useNavigate();
+  const deleteConversation = useDeleteConversationMutation();
 
   const [prompt, setPrompt] = useState<PromptState>(null);
+
+  async function handleDeleteConversation(row: Row) {
+    if (!window.confirm(`永久删除「${row.displayName}」的对话？此操作不可恢复。`)) return;
+    try {
+      await deleteConversation.mutateAsync(row.conversation.id);
+      markConversationRead(row.conversation.id);
+      setComputerOpen(row.conversation.id, false);
+      if (selectedConversationId === row.conversation.id) {
+        await navigate({ to: "/" });
+      }
+    } catch {
+      window.alert("删除失败，请稍后重试");
+    }
+  }
 
   useEffect(() => {
     if (!selectedConversationId) return;
@@ -292,6 +311,7 @@ export function Sidebar({
               onMoveToSection={(row, sectionId) => moveBotToSection(row.bot.id, sectionId)}
               onNewSection={(row) => setPrompt({ kind: "new-section", botId: row.bot.id, value: "新分组" })}
               onOpenBotSettings={() => setSettingsOpen(true)}
+              onDelete={(row) => void handleDeleteConversation(row)}
               hideAction="hide"
             />
           )}
@@ -350,6 +370,7 @@ export function Sidebar({
                   onMoveToSection={(row, sectionId) => moveBotToSection(row.bot.id, sectionId)}
                   onNewSection={(row) => setPrompt({ kind: "new-section", botId: row.bot.id, value: "新分组" })}
                   onOpenBotSettings={() => setSettingsOpen(true)}
+                  onDelete={(row) => void handleDeleteConversation(row)}
                   hideAction="hide"
                 />
               )}
@@ -384,6 +405,7 @@ export function Sidebar({
                 onMoveToSection={(row, sectionId) => moveBotToSection(row.bot.id, sectionId)}
                 onNewSection={(row) => setPrompt({ kind: "new-section", botId: row.bot.id, value: "新分组" })}
                 onOpenBotSettings={() => setSettingsOpen(true)}
+                onDelete={(row) => void handleDeleteConversation(row)}
                 hideAction="hide"
               />
             )}
@@ -431,6 +453,7 @@ export function Sidebar({
                     setPrompt({ kind: "new-section", botId: row.bot.id, value: "新分组" });
                   }}
                   onOpenBotSettings={() => setSettingsOpen(true)}
+                  onDelete={(row) => void handleDeleteConversation(row)}
                   hideAction="unhide"
                 />
               )}
@@ -508,6 +531,20 @@ export function Sidebar({
   );
 }
 
+function relativePreview(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "对话";
+  const delta = Date.now() - date.getTime();
+  const minutes = Math.floor(delta / 60_000);
+  if (minutes < 1) return "刚刚更新";
+  if (minutes < 60) return `${minutes} 分钟前`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} 小时前`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days} 天前`;
+  return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
 function ConversationGroup({
   title,
   emptyLabel,
@@ -527,6 +564,7 @@ function ConversationGroup({
   onMoveToSection,
   onNewSection,
   onOpenBotSettings,
+  onDelete,
   hideAction
 }: {
   title: string;
@@ -547,6 +585,7 @@ function ConversationGroup({
   onMoveToSection: (row: Row, sectionId: string | null) => void;
   onNewSection: (row: Row) => void;
   onOpenBotSettings: () => void;
+  onDelete: (row: Row) => void;
   hideAction: "hide" | "unhide";
 }) {
   if (!title && items.length === 0 && !emptyLabel) return null;
@@ -578,18 +617,18 @@ function ConversationGroup({
                     aria-current={selected ? "page" : undefined}
                     onClick={() => onSelect(row.conversation)}
                     className={cn(
-                      "h-auto flex-1 justify-start gap-2.5 rounded-lg px-2 py-1.5 max-[700px]:justify-center",
+                      "h-auto flex-1 justify-start gap-2.5 rounded-[10px] px-2 py-1.5 max-[700px]:justify-center",
                       selected
                         ? "bg-sidebar-accent text-sidebar-accent-foreground hover:bg-sidebar-accent"
                         : "text-muted-foreground hover:bg-muted/80 hover:text-foreground"
                     )}
                   >
                     <span className="relative">
-                      <Avatar className="size-6">
+                      <Avatar className="size-8 rounded-[9px]">
                         <AvatarFallback
                           aria-hidden
                           className={cn(
-                            "text-[10px] font-semibold",
+                            "rounded-[9px] text-[11px] font-semibold",
                             selected
                               ? "bg-sidebar-primary text-sidebar-primary-foreground"
                               : "bg-muted text-muted-foreground"
@@ -605,16 +644,21 @@ function ConversationGroup({
                         />
                       )}
                     </span>
-                    <span
-                      className={cn(
-                        "min-w-0 flex-1 truncate text-left text-[13px] max-[700px]:hidden",
-                        selected && "font-medium text-foreground",
-                        unread && !selected && "font-medium text-foreground"
-                      )}
-                    >
-                      {row.displayName}
+                    <span className="min-w-0 flex-1 max-[700px]:hidden">
+                      <span
+                        className={cn(
+                          "flex items-center gap-1 truncate text-left text-[13px] leading-tight",
+                          selected && "font-medium text-foreground",
+                          unread && !selected && "font-medium text-foreground"
+                        )}
+                      >
+                        <span className="truncate">{row.displayName}</span>
+                        {muted && <BellOff className="size-3 shrink-0 opacity-60" aria-label="已静音" />}
+                      </span>
+                      <span className="mt-0.5 block truncate text-left text-[11px] leading-tight text-[color:var(--sand-text-tertiary)]">
+                        {relativePreview(row.conversation.updatedAt)}
+                      </span>
                     </span>
-                    {muted && <BellOff className="size-3 opacity-60 max-[700px]:hidden" aria-label="已静音" />}
                   </Button>
                 </div>
               </ContextMenuTrigger>
@@ -688,9 +732,9 @@ function ConversationGroup({
                   )}
                 </ContextMenuItem>
                 <ContextMenuSeparator />
-                <ContextMenuItem disabled title="后端硬删尚未接入">
+                <ContextMenuItem variant="destructive" onSelect={() => onDelete(row)}>
                   <span className="flex items-center gap-2">
-                    <Trash2 className="size-3.5" /> 删除（未接入）
+                    <Trash2 className="size-3.5" /> 删除
                   </span>
                 </ContextMenuItem>
               </ContextMenuContent>

@@ -274,6 +274,57 @@ export function createRepositories(options: DatabaseClientOptions = {}) {
       return rows.map((row) => ConversationSchema.parse(toConversation(row)));
     },
 
+    async deleteConversation(rawInput: unknown): Promise<boolean> {
+      const input = GetConversationInputSchema.parse(rawInput);
+      return sql.begin(async (transaction) => {
+        const owned = await transaction<{ id: string }[]>`
+          SELECT id FROM conversations
+          WHERE id = ${input.conversationId} AND user_id = ${input.userId}
+          FOR UPDATE
+        `;
+        if (!owned[0]) return false;
+
+        // Phase3 表可能尚未迁移到本地库；有则清理，无则跳过。
+        const phase3 = await transaction<{ memories: boolean; skill_proposals: boolean }[]>`
+          SELECT
+            to_regclass('public.memories') IS NOT NULL AS memories,
+            to_regclass('public.skill_proposals') IS NOT NULL AS skill_proposals
+        `;
+        const hasMemories = Boolean(phase3[0]?.memories);
+        const hasSkillProposals = Boolean(phase3[0]?.skill_proposals);
+
+        if (hasMemories) {
+          await transaction`
+            UPDATE memories SET source_task_id = NULL
+            WHERE source_task_id IN (
+              SELECT id FROM tasks
+              WHERE conversation_id = ${input.conversationId} AND user_id = ${input.userId}
+            )
+          `;
+        }
+        if (hasSkillProposals) {
+          await transaction`
+            DELETE FROM skill_proposals
+            WHERE task_id IN (
+              SELECT id FROM tasks
+              WHERE conversation_id = ${input.conversationId} AND user_id = ${input.userId}
+            )
+          `;
+        }
+        await transaction`
+          DELETE FROM tasks
+          WHERE conversation_id = ${input.conversationId} AND user_id = ${input.userId}
+        `;
+
+        const deleted = await transaction<{ id: string }[]>`
+          DELETE FROM conversations
+          WHERE id = ${input.conversationId} AND user_id = ${input.userId}
+          RETURNING id
+        `;
+        return deleted.length > 0;
+      });
+    },
+
     async appendMessage(input: AppendMessageRepositoryInput): Promise<Message> {
       const conversationRows = await sql<{ user_id: string }[]>`
         SELECT user_id FROM conversations WHERE id = ${input.conversationId}
