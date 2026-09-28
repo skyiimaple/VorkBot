@@ -4,7 +4,6 @@
     "noEmit": true,
     "jsx": "react-jsx",
     "types": ["node"],
-    "baseUrl": ".",
     "paths": {
       "@/*": ["./src/renderer/src/*"]
     }
