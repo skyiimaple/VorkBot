@@ -5,7 +5,16 @@ const IdentifierSchema = z.string().trim().min(1);
 const DateTimeSchema = z.string().datetime();
 const TrimmedTextSchema = z.string().trim().min(1);
 
-export const TaskStatusLabelSchema = z.enum(["排队", "运行中", "等待审批", "已完成", "失败", "已取消"]);
+export const TaskStatusLabelSchema = z.enum([
+  "排队",
+  "运行中",
+  "等待审批",
+  "已暂停",
+  "结果待确认",
+  "已完成",
+  "失败",
+  "已取消"
+]);
 
 export const TaskListItemSchema = TaskSchema.extend({
   title: TrimmedTextSchema,

@@ -13,6 +13,7 @@ import { HomePage } from "@/routes/HomePage";
 import { CredentialsPage } from "@/features/credentials/CredentialsPage";
 import { FilesPage, SettingsPage, SkillsPage, TasksPage } from "@/routes/ManagePages";
 import { NewChatPage } from "@/routes/NewChatPage";
+import { RoutinesPage } from "@/features/routines/RoutinesPage";
 
 export type RouterContext = {
   api: VorkApi;
@@ -28,6 +29,7 @@ function buildRouteTree() {
     createRoute({ getParentRoute: () => rootRoute, path: "/new", component: NewChatPage }),
     createRoute({ getParentRoute: () => rootRoute, path: "/c/$conversationId", component: ConversationPage }),
     createRoute({ getParentRoute: () => rootRoute, path: "/tasks", component: TasksPage }),
+    createRoute({ getParentRoute: () => rootRoute, path: "/routines", component: RoutinesPage }),
     createRoute({ getParentRoute: () => rootRoute, path: "/skills", component: SkillsPage }),
     createRoute({ getParentRoute: () => rootRoute, path: "/files", component: FilesPage }),
     createRoute({ getParentRoute: () => rootRoute, path: "/credentials", component: CredentialsPage }),

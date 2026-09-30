@@ -3,8 +3,8 @@ import {
   AgentActionSchema,
   DEFAULT_TASK_BUDGET,
   SLOT_EVENT_TYPES,
-  TOOL_EVENT_TYPES,
   type AgentAction,
+  type AgentToolAction,
   type Task,
   type TaskBudget,
   type TaskJob
@@ -12,8 +12,9 @@ import {
 import type { Job } from "bullmq";
 import type { Repositories } from "@vork/database";
 import { BudgetExceededError, createBudgetTracker } from "./budget.js";
+import { toCheckpointState } from "./checkpoint.js";
 import { appendToolFailed, failComputerTask } from "./computer-task-errors.js";
-import type { ComputerClientLike } from "./computer-client.js";
+import type { AgentComputerClientLike } from "./computer-client.js";
 import {
   createAgentFileDemoActions,
   FakeActionModel,
@@ -24,13 +25,16 @@ import { shouldSuggestSkillDraft, workingMemorySummary } from "./phase3-helpers.
 import type { TaskNotifier } from "./queue.js";
 import { retryOrFailSlotWait, toSlotWaitError } from "./slot-retry.js";
 import { assertTaskStillActive } from "./task-guard.js";
+import { createTaskControlMonitor, honorTaskControl } from "./task-control.js";
+import { createToolExecutionState, executeToolAction, UncertainSideEffectError } from "./tool-executor.js";
+import { classifyTransientFailure, runWithTransientRetry } from "./transient-retry.js";
 
 const HEARTBEAT_INTERVAL_MS = 15_000;
 const terminalStatuses = new Set<Task["status"]>(["completed", "failed", "cancelled"]);
 
 export type AgentLoopDependencies = {
   repos: Repositories;
-  computer: ComputerClientLike;
+  computer: AgentComputerClientLike;
   notifier: TaskNotifier;
   job?: Job<TaskJob>;
   actionModel?: ActionModel;
@@ -47,8 +51,8 @@ async function notify(notifier: TaskNotifier, taskId: string): Promise<void> {
 
 function isToolAction(
   action: AgentAction
-): action is Extract<AgentAction, { type: "file.write" | "file.read" }> {
-  return action.type === "file.write" || action.type === "file.read";
+): action is AgentToolAction {
+  return action.type.startsWith("file.") || action.type.startsWith("browser.") || action.type.startsWith("terminal.");
 }
 
 export async function runAgentLoop(rawJob: TaskJob, deps: AgentLoopDependencies): Promise<void> {
@@ -56,22 +60,39 @@ export async function runAgentLoop(rawJob: TaskJob, deps: AgentLoopDependencies)
   if (!task || terminalStatuses.has(task.status)) return;
   if (task.status === "waiting_approval") return;
 
+  const checkpoint = await deps.repos.getLatestTaskCheckpoint(task.id, task.userId);
   const budget = deps.budget ?? DEFAULT_TASK_BUDGET;
-  const tracker = createBudgetTracker(budget);
+  const tracker = createBudgetTracker(budget, checkpoint?.state);
   const startedAt = Date.now();
   const actionModel = deps.actionModel ?? new FakeActionModel(createAgentFileDemoActions());
 
   let leaseId: string | undefined;
   let heartbeatTimer: ReturnType<typeof setInterval> | undefined;
   let activeTool: string | undefined;
-  let reply = "";
-  let lastObservation: string | undefined;
-  let turn = 0;
+  let reply = checkpoint?.state.reply ?? "";
+  let lastObservation: string | undefined = checkpoint?.state.lastObservation || undefined;
+  let turn = checkpoint ? checkpoint.state.nextTurn - 1 : 0;
+  let lastCompletedToolCallId = checkpoint?.state.lastCompletedToolCallId ?? null;
+  const toolState = createToolExecutionState();
+
+  const checkpointState = (nextTurn: number, observation = lastObservation ?? "", completedId = lastCompletedToolCallId) => {
+    const snapshot = tracker.snapshot(startedAt);
+    return toCheckpointState({
+      nextTurn,
+      lastObservation: observation,
+      reply,
+      modelTurns: snapshot.modelTurns,
+      toolCalls: snapshot.toolCalls,
+      lastCompletedToolCallId: completedId
+    });
+  };
+  const honorBoundary = async (nextTurn: number) =>
+    honorTaskControl(deps.repos, task.id, task.userId, checkpointState(nextTurn));
 
   try {
     let lease;
     try {
-      lease = await deps.computer.acquire({ taskId: task.id, botId: task.botId, kind: "file" });
+      lease = await deps.computer.acquire({ taskId: task.id, botId: task.botId, kind: "agent" });
     } catch (error) {
       const wait = toSlotWaitError(error);
       if (wait && deps.job) {
@@ -106,6 +127,34 @@ export async function runAgentLoop(rawJob: TaskJob, deps: AgentLoopDependencies)
     const userMessage = messages.find((m) => m.id === task.messageId && m.authorType === "user");
     if (!userMessage) throw new Error("Task user message is unavailable");
 
+    const incomplete = await deps.repos.getIncompleteToolCall(task.id, task.userId);
+    if (incomplete?.status === "uncertain") return;
+    if (incomplete?.status === "executing" && incomplete.risk === "side_effect") {
+      await deps.repos.markToolCallUncertain(incomplete.id, task.userId);
+      await notify(deps.notifier, task.id);
+      return;
+    }
+    if (incomplete && (incomplete.status === "prepared" || incomplete.risk === "safe")) {
+      const recoveredAction = AgentActionSchema.parse(incomplete.action);
+      if (!isToolAction(recoveredAction)) throw new Error("Incomplete call is not a tool action");
+      turn = incomplete.turn;
+      tracker.recordToolCall();
+      lastObservation = await executeToolAction(recoveredAction, {
+        taskId: task.id,
+        leaseId: lease.leaseId,
+        computer: deps.computer,
+        repos: deps.repos,
+        notifier: deps.notifier,
+        state: toolState,
+        userId: task.userId,
+        turn,
+        attempt: incomplete.status === "executing" ? incomplete.attempt + 1 : incomplete.attempt,
+        existingToolCall: incomplete.status === "prepared" ? incomplete : undefined,
+        checkpoint: (observation, toolCallId) => checkpointState(turn + 1, observation, toolCallId)
+      });
+      lastCompletedToolCallId = (await deps.repos.getLatestTaskCheckpoint(task.id, task.userId))?.state.lastCompletedToolCallId ?? lastCompletedToolCallId;
+    }
+
     const resume = await deps.repos.claimApprovedActionForResume(task.id);
     if (resume) {
       const approvedAction = AgentActionSchema.parse(resume.action);
@@ -136,28 +185,59 @@ export async function runAgentLoop(rawJob: TaskJob, deps: AgentLoopDependencies)
           leaseId: lease.leaseId,
           computer: deps.computer,
           repos: deps.repos,
-          notifier: deps.notifier
+          notifier: deps.notifier,
+          state: toolState,
+          userId: task.userId,
+          turn,
+          checkpoint: (observation, toolCallId) => checkpointState(turn + 1, observation, toolCallId)
         });
+        lastCompletedToolCallId = (await deps.repos.getLatestTaskCheckpoint(task.id, task.userId))?.state.lastCompletedToolCallId ?? lastCompletedToolCallId;
         activeTool = undefined;
       }
     }
 
     while (true) {
-      if (!(await assertTaskStillActive(deps.repos, task.id))) return;
+      if ((await honorBoundary(turn + 1)) !== "active") return;
       tracker.assertWithinBudget(startedAt);
 
       tracker.recordModelTurn();
       turn += 1;
       tracker.assertWithinBudget(startedAt);
 
-      const rawAction = await actionModel.nextAction({
-        botId: task.botId,
-        conversationId: task.conversationId,
-        userMessage: userMessage.content,
-        turn,
-        lastObservation
-      });
+      const controlMonitor = createTaskControlMonitor(deps.repos, task.id);
+      let rawAction: AgentAction;
+      try {
+        rawAction = await runWithTransientRetry(
+          () => actionModel.nextAction({
+            botId: task.botId,
+            conversationId: task.conversationId,
+            userMessage: userMessage.content,
+            turn,
+            lastObservation,
+            signal: controlMonitor.signal
+          }),
+          {
+            shouldRetry: (error) => classifyTransientFailure(error, "model", "safe", false),
+            onRetry: async (attempt, delayMs, error) => {
+              const errorCode = error instanceof Error && "code" in error ? String(error.code) : "MODEL_TRANSIENT";
+              await deps.repos.scheduleTaskRetry({
+                taskId: task.id,
+                userId: task.userId,
+                attempt,
+                nextRetryAt: new Date(Date.now() + delayMs).toISOString(),
+                errorCode
+              });
+              await notify(deps.notifier, task.id);
+            }
+          }
+        );
+        await deps.repos.clearTaskRetry(task.id, task.userId);
+      } finally {
+        controlMonitor.stop();
+      }
       const action = AgentActionSchema.parse(rawAction);
+
+      if ((await honorBoundary(turn)) !== "active") return;
 
       await deps.repos.appendTaskEvent({
         taskId: task.id,
@@ -175,6 +255,7 @@ export async function runAgentLoop(rawJob: TaskJob, deps: AgentLoopDependencies)
       }
       if (policy.decision === "needs_approval") {
         if (!(await assertTaskStillActive(deps.repos, task.id))) return;
+        await deps.repos.saveTaskCheckpoint({ taskId: task.id, userId: task.userId, state: checkpointState(turn + 1) });
         await deps.repos.requestApproval({ taskId: task.id, reason: policy.reason, action });
         await notify(deps.notifier, task.id);
         return;
@@ -212,7 +293,7 @@ export async function runAgentLoop(rawJob: TaskJob, deps: AgentLoopDependencies)
       if (action.type === "message.reply") {
         reply = action.text;
         for (const chunk of chunkText(action.text, 24)) {
-          if (!(await assertTaskStillActive(deps.repos, task.id))) return;
+          if ((await honorBoundary(turn + 1)) !== "active") return;
           await deps.repos.appendTaskEvent({
             taskId: task.id,
             type: "message.delta",
@@ -220,6 +301,7 @@ export async function runAgentLoop(rawJob: TaskJob, deps: AgentLoopDependencies)
           });
           await notify(deps.notifier, task.id);
         }
+        await deps.repos.saveTaskCheckpoint({ taskId: task.id, userId: task.userId, state: checkpointState(turn + 1) });
         continue;
       }
 
@@ -233,6 +315,7 @@ export async function runAgentLoop(rawJob: TaskJob, deps: AgentLoopDependencies)
           sourceTaskId: task.id
         });
         lastObservation = `saved ${action.kind} memory`;
+        await deps.repos.saveTaskCheckpoint({ taskId: task.id, userId: task.userId, state: checkpointState(turn + 1) });
         continue;
       }
 
@@ -247,13 +330,25 @@ export async function runAgentLoop(rawJob: TaskJob, deps: AgentLoopDependencies)
           leaseId: lease.leaseId,
           computer: deps.computer,
           repos: deps.repos,
-          notifier: deps.notifier
+          notifier: deps.notifier,
+          state: toolState,
+          userId: task.userId,
+          turn,
+          checkpoint: (observation, toolCallId) => checkpointState(turn + 1, observation, toolCallId)
         });
+        lastCompletedToolCallId = (await deps.repos.getLatestTaskCheckpoint(task.id, task.userId))?.state.lastCompletedToolCallId ?? lastCompletedToolCallId;
         activeTool = undefined;
+        if ((await honorBoundary(turn + 1)) !== "active") return;
         continue;
       }
     }
   } catch (error) {
+    if (error instanceof UncertainSideEffectError) {
+      await notify(deps.notifier, task.id);
+      return;
+    }
+    const controlled = await deps.repos.getTask(task.id);
+    if (!controlled || controlled.status === "cancelled" || controlled.status === "paused" || controlled.status === "uncertain") return;
     if (error instanceof BudgetExceededError) {
       const latest = await deps.repos.getTask(task.id);
       if (latest && !terminalStatuses.has(latest.status)) {
@@ -297,51 +392,6 @@ export async function runAgentLoop(rawJob: TaskJob, deps: AgentLoopDependencies)
       }
     }
   }
-}
-
-async function executeToolAction(
-  action: Extract<AgentAction, { type: "file.write" | "file.read" }>,
-  deps: {
-    taskId: string;
-    leaseId: string;
-    computer: ComputerClientLike;
-    repos: Repositories;
-    notifier: TaskNotifier;
-  }
-): Promise<string> {
-  await deps.repos.appendTaskEvent({
-    taskId: deps.taskId,
-    type: TOOL_EVENT_TYPES.STARTED,
-    payload: { toolName: action.type, path: action.path }
-  });
-  await notify(deps.notifier, deps.taskId);
-
-  if (action.type === "file.write") {
-    const written = await deps.computer.writeFile(deps.leaseId, action.path, action.content);
-    const observation = `wrote ${written.path} (${written.bytes} bytes)`;
-    await deps.repos.appendTaskEvent({
-      taskId: deps.taskId,
-      type: TOOL_EVENT_TYPES.FINISHED,
-      payload: { toolName: action.type, path: written.path, bytes: written.bytes }
-    });
-    await notify(deps.notifier, deps.taskId);
-    return observation;
-  }
-
-  const read = await deps.computer.readFile(deps.leaseId, action.path);
-  const observation = `read ${read.path}: ${read.content.slice(0, 500)}${read.truncated ? "…" : ""}`;
-  await deps.repos.appendTaskEvent({
-    taskId: deps.taskId,
-    type: TOOL_EVENT_TYPES.FINISHED,
-    payload: {
-      toolName: action.type,
-      path: read.path,
-      bytes: read.content.length,
-      truncated: read.truncated
-    }
-  });
-  await notify(deps.notifier, deps.taskId);
-  return observation;
 }
 
 function chunkText(text: string, size: number): string[] {

@@ -49,10 +49,20 @@ describe("runTask routing", () => {
       release: vi.fn(),
       writeFile: vi.fn(),
       readFile: vi.fn(),
+      listFiles: vi.fn(),
+      statFile: vi.fn(),
+      makeDirectory: vi.fn(),
+      moveFile: vi.fn(),
+      deleteFile: vi.fn(),
       navigate: vi.fn(),
       observe: vi.fn(),
       click: vi.fn(),
-      type: vi.fn()
+      type: vi.fn(),
+      scroll: vi.fn(),
+      startTerminal: vi.fn(),
+      writeTerminal: vi.fn(),
+      readTerminal: vi.fn(),
+      terminateTerminal: vi.fn()
     };
 
     await runTask(job, { repos, model: new FakeModel(["普通", "回复"]), notifier, computer });

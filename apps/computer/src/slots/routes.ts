@@ -22,10 +22,6 @@ export function registerSlotRoutes(
       return reply.code(400).send({ code: "bad_request", message: parsed.error.message });
     }
 
-    if (parsed.data.kind === "terminal") {
-      return reply.code(501).send({ code: "not_implemented" });
-    }
-
     const result = manager.acquire(parsed.data);
     if (isComputerError(result)) {
       return reply.code(503).send(result);

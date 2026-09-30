@@ -6,7 +6,9 @@ import {
   FileNotFoundError,
   FileService,
   FileTooLargeError,
+  DirectoryNotEmptyError,
   ReadOnlyRootError,
+  TargetExistsError,
   WriteQuotaExceededError
 } from "./service.js";
 
@@ -54,6 +56,14 @@ const WriteBodySchema = PathBodySchema.extend({
   encoding: z.enum(["utf8", "base64"]).optional()
 });
 
+const MoveBodySchema = LeaseIdSchema.extend({
+  from: RelativePathSchema,
+  to: RelativePathSchema,
+  root: FileRootSchema.optional()
+});
+
+const DeleteBodySchema = PathBodySchema.extend({ recursive: z.boolean().optional() });
+
 function sendServiceError(
   reply: { code: (status: number) => { send: (payload: unknown) => unknown } },
   error: unknown
@@ -69,6 +79,9 @@ function sendServiceError(
   }
   if (error instanceof FileNotFoundError) {
     return reply.code(404).send({ code: error.code });
+  }
+  if (error instanceof TargetExistsError || error instanceof DirectoryNotEmptyError) {
+    return reply.code(409).send({ code: error.code });
   }
   if (error instanceof PathTraversalError) {
     return reply.code(400).send({ code: error.code });
@@ -137,6 +150,26 @@ export function registerFileRoutes(app: FastifyInstance, service: FileService): 
 
     try {
       return reply.code(200).send(await service.mkdir(parsed.data));
+    } catch (error) {
+      return sendServiceError(reply, error);
+    }
+  });
+
+  app.post("/v1/files/move", async (request, reply) => {
+    const parsed = MoveBodySchema.safeParse(request.body);
+    if (!parsed.success) return reply.code(400).send({ code: "bad_request", message: parsed.error.message });
+    try {
+      return reply.code(200).send(await service.move(parsed.data));
+    } catch (error) {
+      return sendServiceError(reply, error);
+    }
+  });
+
+  app.post("/v1/files/delete", async (request, reply) => {
+    const parsed = DeleteBodySchema.safeParse(request.body);
+    if (!parsed.success) return reply.code(400).send({ code: "bad_request", message: parsed.error.message });
+    try {
+      return reply.code(200).send(await service.delete(parsed.data));
     } catch (error) {
       return sendServiceError(reply, error);
     }

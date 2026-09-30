@@ -13,6 +13,8 @@ import { registerControlRoutes } from "./control/routes.js";
 import { registerFrameRoutes } from "./frame/routes.js";
 import { registerSlotRoutes } from "./slots/routes.js";
 import { createMemoryPressureReader } from "./system/memory-pressure.js";
+import { TerminalService } from "./terminal/service.js";
+import { registerTerminalRoutes } from "./terminal/routes.js";
 
 export type ComputerAppOptions = {
   token: string;
@@ -32,6 +34,7 @@ export function buildComputerApp(options: ComputerAppOptions): FastifyInstance {
   const browserSessions = new BrowserSessionRegistry(browserProfilesRoot);
 
   let browserService: BrowserService | undefined;
+  let terminalService: TerminalService | undefined;
   const leaseManager = new LeaseManager({
     maxSlots: options.maxSlots,
     maxBrowserSlots: options.maxBrowserSlots,
@@ -39,8 +42,11 @@ export function buildComputerApp(options: ComputerAppOptions): FastifyInstance {
     isMemoryPressure: options.isMemoryPressure,
     onExpired: ({ slotId, kind }) => {
       controlStore.reset(slotId);
-      if (kind === "browser") {
+      if (kind === "browser" || kind === "agent") {
         void browserService?.releaseSlot(slotId);
+      }
+      if (kind === "terminal" || kind === "agent") {
+        void terminalService?.releaseSlot(slotId);
       }
     }
   });
@@ -50,22 +56,28 @@ export function buildComputerApp(options: ComputerAppOptions): FastifyInstance {
     sessionRegistry: browserSessions,
     controlStore
   });
+  terminalService = new TerminalService({ workspaceRoot, leaseManager });
 
   registerAuth(app, options.token);
   registerSlotRoutes(app, leaseManager, {
     onRelease: async ({ slotId, kind }) => {
       controlStore.reset(slotId);
-      if (kind === "browser") {
+      if (kind === "browser" || kind === "agent") {
         await browserService?.releaseSlot(slotId);
+      }
+      if (kind === "terminal" || kind === "agent") {
+        await terminalService?.releaseSlot(slotId);
       }
     }
   });
   registerFileRoutes(app, fileService);
   registerBrowserRoutes(app, browserService);
+  registerTerminalRoutes(app, terminalService);
   registerControlRoutes(app, controlStore);
   registerFrameRoutes(app, { leaseManager, sessions: browserSessions });
 
   app.get("/health", async () => ({ status: "ok" as const }));
+  app.addHook("onClose", async () => terminalService?.dispose());
 
   return app;
 }

@@ -3,8 +3,8 @@ import type { Job } from "bullmq";
 import type { Repositories } from "@vork/database";
 import { createActionModelFromEnv, isAgentLlmMessage } from "./action-model.js";
 import { runAgentLoop } from "./agent-loop.js";
-import type { ComputerClientLike } from "./computer-client.js";
-import { isAgentFileMessage } from "./fake-action-model.js";
+import type { AgentComputerClientLike } from "./computer-client.js";
+import { createAgentPauseDemoModel, createAgentTerminalDemoModel, createAgentUncertainDemoModel, isAgentFileMessage, isAgentPauseMessage, isAgentTerminalMessage, isAgentUncertainMessage } from "./fake-action-model.js";
 import type { ModelProvider } from "./model.js";
 import type { TaskNotifier } from "./queue.js";
 import { runChatTask } from "./run-chat-task.js";
@@ -15,8 +15,10 @@ export type TaskWorkerDependencies = {
   repos: Repositories;
   model: ModelProvider;
   notifier: TaskNotifier;
-  computer?: ComputerClientLike;
+  computer?: AgentComputerClientLike;
 };
+
+const uncertainSimulatedTasks = new Set<string>();
 
 async function notify(notifier: TaskNotifier, taskId: string): Promise<void> {
   try {
@@ -62,6 +64,49 @@ export async function runTask(
       computer: deps.computer,
       notifier: deps.notifier,
       job: queueJob
+    });
+    return;
+  }
+
+  if (isAgentPauseMessage(userMessage.content)) {
+    if (!deps.computer) return failWithoutComputer(job.taskId, deps);
+    await runAgentLoop(job, { repos: deps.repos, computer: deps.computer, notifier: deps.notifier, job: queueJob, actionModel: createAgentPauseDemoModel() });
+    return;
+  }
+
+  if (isAgentUncertainMessage(userMessage.content)) {
+    if (!deps.computer) return failWithoutComputer(job.taskId, deps);
+    const computer = new Proxy(deps.computer, {
+      get(target, property, receiver) {
+        if (property === "writeFile") {
+          return async (...args: Parameters<AgentComputerClientLike["writeFile"]>) => {
+            const result = await target.writeFile(...args);
+            if (!uncertainSimulatedTasks.has(job.taskId)) {
+              uncertainSimulatedTasks.add(job.taskId);
+              throw new Error("simulated response loss after side effect");
+            }
+            return result;
+          };
+        }
+        const value = Reflect.get(target, property, receiver) as unknown;
+        return typeof value === "function" ? value.bind(target) : value;
+      }
+    });
+    await runAgentLoop(job, { repos: deps.repos, computer, notifier: deps.notifier, job: queueJob, actionModel: createAgentUncertainDemoModel() });
+    return;
+  }
+
+  if (isAgentTerminalMessage(userMessage.content)) {
+    if (!deps.computer) {
+      await failWithoutComputer(job.taskId, deps);
+      return;
+    }
+    await runAgentLoop(job, {
+      repos: deps.repos,
+      computer: deps.computer,
+      notifier: deps.notifier,
+      job: queueJob,
+      actionModel: createAgentTerminalDemoModel()
     });
     return;
   }

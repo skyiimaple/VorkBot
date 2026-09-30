@@ -136,7 +136,7 @@ export class BrowserService {
 
   #assertBrowserLease(leaseId: string) {
     const lease = this.#leaseManager.assertActive(leaseId);
-    if (lease.kind !== "browser") {
+    if (lease.kind !== "browser" && lease.kind !== "agent") {
       throw new BrowserKindError();
     }
     return lease;

@@ -25,6 +25,8 @@ import type {
   TaskEvent
 } from "@vork/contracts";
 import { createDatabaseClient, type DatabaseClientOptions } from "./client.js";
+import { createTaskRecoveryRepository } from "./task-recovery-repository.js";
+import { createRoutineRepository } from "./routine-repository.js";
 
 type DateValue = Date | string;
 
@@ -61,6 +63,9 @@ type TaskRow = {
   conversation_id: string;
   message_id: string;
   status: Task["status"];
+  pause_requested_at?: DateValue | null;
+  retry_count?: number;
+  next_retry_at?: DateValue | null;
   last_event_sequence: number;
   created_at: DateValue;
   updated_at: DateValue;
@@ -163,6 +168,9 @@ function toTask(row: TaskRow): Task {
     conversationId: row.conversation_id,
     messageId: row.message_id,
     status: row.status,
+    pauseRequestedAt: row.pause_requested_at ? iso(row.pause_requested_at) : null,
+    retryCount: row.retry_count ?? 0,
+    nextRetryAt: row.next_retry_at ? iso(row.next_retry_at) : null,
     createdAt: iso(row.created_at),
     updatedAt: iso(row.updated_at)
   };
@@ -189,8 +197,12 @@ function required<Row>(rows: Row[], message: string): Row {
 export function createRepositories(options: DatabaseClientOptions = {}) {
   const client = createDatabaseClient(options);
   const { sql } = client;
+  const recovery = createTaskRecoveryRepository(sql);
+  const routines = createRoutineRepository(sql);
 
   return {
+    ...recovery,
+    ...routines,
     close: client.close,
 
     async createBot(rawInput: CreateBotRepositoryInput): Promise<Bot> {
@@ -418,7 +430,8 @@ export function createRepositories(options: DatabaseClientOptions = {}) {
 
     async getTask(taskId: string): Promise<Task | null> {
       const rows = await sql<TaskRow[]>`
-        SELECT id, user_id, bot_id, conversation_id, message_id, status, last_event_sequence, created_at, updated_at
+        SELECT id, user_id, bot_id, conversation_id, message_id, status, pause_requested_at, retry_count, next_retry_at,
+          last_event_sequence, created_at, updated_at
         FROM tasks WHERE id = ${taskId}
       `;
       return rows[0] ? toTask(rows[0]) : null;
@@ -434,6 +447,9 @@ export function createRepositories(options: DatabaseClientOptions = {}) {
           tasks.conversation_id,
           tasks.message_id,
           tasks.status,
+          tasks.pause_requested_at,
+          tasks.retry_count,
+          tasks.next_retry_at,
           tasks.last_event_sequence,
           tasks.created_at,
           tasks.updated_at,

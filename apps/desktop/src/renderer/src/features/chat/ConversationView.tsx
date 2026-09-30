@@ -1,7 +1,7 @@
 import type { Task } from "@vork/contracts";
 import { useNavigate } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
-import { ChevronDown, Copy, LoaderCircle, Monitor, MoreHorizontal, Settings2, Trash2 } from "lucide-react";
+import { ChevronDown, Copy, LoaderCircle, Monitor, MoreHorizontal, Pause, Play, Settings2, Square, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -18,6 +18,7 @@ import { workspaceKeys, useDeleteConversationMutation } from "../workspace/useWo
 import { ComputerPanel } from "../computer/ComputerPanel.js";
 import { AssistantMessageBody } from "./AssistantMessageBody.js";
 import { MessageComposer } from "./MessageComposer.js";
+import { TaskControlCard } from "./TaskControlCard.js";
 import { useConversation } from "./useConversation.js";
 import { useStickToBottom } from "./useStickToBottom.js";
 
@@ -57,7 +58,13 @@ function headerStatusLabel(connectionState: string, activeTask: Task | undefined
   switch (activeTask.status) {
     case "queued":
     case "running":
-      return thinkingLabel;
+      return activeTask.pauseRequestedAt ? "正在暂停" : thinkingLabel;
+    case "paused":
+      return "已暂停";
+    case "waiting_approval":
+      return "等待审批";
+    case "uncertain":
+      return "结果待确认";
     case "completed":
       return "已完成";
     case "failed":
@@ -70,7 +77,8 @@ function headerStatusLabel(connectionState: string, activeTask: Task | undefined
 }
 
 export function ConversationView({ conversationId, botName }: { conversationId: string; botName: string }) {
-  const { messages, activeTask, activeSlotId, connectionState, sendMessage, cancelActiveTask, working, api } =
+  const { messages, activeTask, controlState, activeSlotId, connectionState, sendMessage, cancelActiveTask,
+    pauseActiveTask, resumeActiveTask, resolveApproval, resolveUncertain, isControlPending, working, api } =
     useConversation(conversationId);
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -147,6 +155,21 @@ export function ConversationView({ conversationId, botName }: { conversationId: 
           </div>
         </div>
         <div className="header-actions app-region-no-drag flex items-center gap-0.5" aria-label="对话操作">
+          {(activeTask?.status === "queued" || activeTask?.status === "running") && !activeTask.pauseRequestedAt ? (
+            <Button type="button" size="icon-sm" variant="ghost" aria-label="暂停任务" title="暂停任务" disabled={isControlPending} onClick={() => void pauseActiveTask()} className="size-8 rounded-lg text-muted-foreground">
+              <Pause className="size-4" />
+            </Button>
+          ) : null}
+          {activeTask?.status === "paused" ? (
+            <Button type="button" size="icon-sm" variant="ghost" aria-label="恢复任务" title="恢复任务" disabled={isControlPending} onClick={() => void resumeActiveTask()} className="size-8 rounded-lg text-muted-foreground">
+              <Play className="size-4" />
+            </Button>
+          ) : null}
+          {activeTask && ["queued", "running", "paused"].includes(activeTask.status) ? (
+            <Button type="button" size="icon-sm" variant="ghost" aria-label="取消任务" title="取消任务" disabled={isControlPending} onClick={() => void cancelActiveTask()} className="size-8 rounded-lg text-muted-foreground">
+              <Square className="size-3.5" />
+            </Button>
+          ) : null}
           <Button
             type="button"
             size="icon-sm"
@@ -288,6 +311,14 @@ export function ConversationView({ conversationId, botName }: { conversationId: 
                     </div>
                   </article>
                 )}
+                {controlState && (activeTask?.status === "waiting_approval" || activeTask?.status === "uncertain") ? (
+                  <TaskControlCard
+                    controlState={controlState}
+                    pending={isControlPending}
+                    onApproval={(decision) => void resolveApproval(decision)}
+                    onUncertain={(resolution) => void resolveUncertain(resolution)}
+                  />
+                ) : null}
                 <div ref={bottomRef} aria-hidden className="h-px w-full shrink-0" />
               </div>
             </div>

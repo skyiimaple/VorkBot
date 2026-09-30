@@ -1,4 +1,4 @@
-import type { Message, Task, TaskEvent } from "@vork/contracts";
+import type { Message, Task, TaskControlState, TaskEvent, UncertainResolutionInput } from "@vork/contracts";
 import { isCancelUtterance, parseCreateAssistantIntent } from "@vork/contracts";
 import { createContext, createElement, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import type { VorkApi } from "../../../../preload/api.js";
@@ -25,13 +25,15 @@ export function useVorkApi(): VorkApi {
 }
 
 function isActiveTaskStatus(status: Task["status"]): boolean {
-  return status === "queued" || status === "running" || status === "waiting_approval";
+  return status === "queued" || status === "running" || status === "waiting_approval" || status === "paused" || status === "uncertain";
 }
 
 export function useConversation(conversationId: string) {
   const api = useVorkApi();
   const [messages, setMessages] = useState<Message[]>([]);
   const [activeTask, setActiveTask] = useState<Task>();
+  const [controlState, setControlState] = useState<TaskControlState>();
+  const [isControlPending, setControlPending] = useState(false);
   const [activeSlotId, setActiveSlotId] = useState<string>();
   const [connectionState, setConnectionState] = useState<ConnectionState>("loading");
   const lastSequence = useRef(0);
@@ -47,10 +49,15 @@ export function useConversation(conversationId: string) {
     setActiveTask(undefined);
     setActiveSlotId(undefined);
     setConnectionState("loading");
-    void api.request({ operation: "listMessages", input: { conversationId } }).then(
-      (response) => {
-        if (cancelled || response.operation !== "listMessages") return;
-        setMessages(response.data.messages);
+    void Promise.all([
+      api.request({ operation: "listMessages", input: { conversationId } }),
+      api.request({ operation: "getActiveTask", input: { conversationId } })
+    ]).then(
+      ([messagesResponse, taskResponse]) => {
+        if (cancelled || messagesResponse.operation !== "listMessages" || taskResponse.operation !== "getActiveTask") return;
+        setMessages(messagesResponse.data.messages);
+        setControlState(taskResponse.data.controlState ?? undefined);
+        setActiveTask(taskResponse.data.controlState?.task);
         setConnectionState("ready");
       },
       () => {
@@ -64,11 +71,29 @@ export function useConversation(conversationId: string) {
 
   useEffect(() => {
     if (!activeTask) return;
-    return api.subscribeTask(activeTask.id, lastSequence.current, (event) => {
+    let cancelled = false;
+    const unsubscribe = api.subscribeTask(activeTask.id, lastSequence.current, (event) => {
       if (event.sequence <= lastSequence.current) return;
       lastSequence.current = event.sequence;
       mergeTaskEvent(event, conversationId, setMessages, setActiveTask, setActiveSlotId);
+      if (["task.pause_requested", "task.paused", "task.resumed", "approval.request", "tool.uncertain", "tool.uncertain_resolved"].includes(event.type)) {
+        void api.request({ operation: "getTaskControlState", input: { taskId: event.taskId } }).then((response) => {
+          if (!cancelled && response.operation === "getTaskControlState") {
+            setControlState(response.data);
+            setActiveTask(response.data.task);
+          }
+        });
+      }
+      if (event.type === "message.completed") {
+        void api.request({ operation: "listMessages", input: { conversationId } }).then((response) => {
+          if (!cancelled && response.operation === "listMessages") setMessages(response.data.messages);
+        });
+      }
     });
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
   }, [activeTask?.id, api, conversationId]);
 
   const cancelActiveTask = useCallback(async () => {
@@ -79,6 +104,45 @@ export function useConversation(conversationId: string) {
     setActiveTask((current) =>
       current && current.id === response.data.task.id ? { ...current, ...response.data.task } : current
     );
+    setControlState(undefined);
+  }, [api]);
+
+  const mutateControl = useCallback(async (operation: "pauseTask" | "resumeTask") => {
+    const task = activeTaskRef.current;
+    if (!task) return;
+    setControlPending(true);
+    try {
+      const response = await api.request({ operation, input: { taskId: task.id } });
+      if (response.operation !== operation) throw new Error("Unexpected Vork API response");
+      setActiveTask(response.data.task);
+      setControlState((current) => ({ ...(current ?? {}), task: response.data.task }));
+    } finally {
+      setControlPending(false);
+    }
+  }, [api]);
+
+  const resolveApproval = useCallback(async (decision: "approve" | "reject") => {
+    const task = activeTaskRef.current;
+    if (!task) return;
+    setControlPending(true);
+    try {
+      const response = await api.request({ operation: "resolveApproval", input: { taskId: task.id, decision } });
+      if (response.operation !== "resolveApproval") throw new Error("Unexpected Vork API response");
+      setActiveTask(response.data.task);
+      setControlState({ task: response.data.task });
+    } finally { setControlPending(false); }
+  }, [api]);
+
+  const resolveUncertain = useCallback(async (resolution: UncertainResolutionInput["resolution"]) => {
+    const task = activeTaskRef.current;
+    if (!task) return;
+    setControlPending(true);
+    try {
+      const response = await api.request({ operation: "resolveUncertain", input: { taskId: task.id, resolution } });
+      if (response.operation !== "resolveUncertain") throw new Error("Unexpected Vork API response");
+      setActiveTask(response.data.task);
+      setControlState({ task: response.data.task });
+    } finally { setControlPending(false); }
   }, [api]);
 
   const createAssistantFromIntent = useCallback(
@@ -127,12 +191,18 @@ export function useConversation(conversationId: string) {
   return {
     messages,
     activeTask,
+    controlState,
     activeSlotId,
     sendMessage,
     cancelActiveTask,
+    pauseActiveTask: () => mutateControl("pauseTask"),
+    resumeActiveTask: () => mutateControl("resumeTask"),
+    resolveApproval,
+    resolveUncertain,
+    isControlPending,
     connectionState,
     api,
-    working: Boolean(activeTask && isActiveTaskStatus(activeTask.status))
+    working: Boolean(activeTask && (activeTask.status === "queued" || activeTask.status === "running"))
   };
 }
 
@@ -180,6 +250,9 @@ function taskStatusFor(type: string): Task["status"] | undefined {
   if (type === "task.queued") return "queued";
   if (type === "task.running") return "running";
   if (type === "approval.request") return "waiting_approval";
+  if (type === "task.paused") return "paused";
+  if (type === "task.resumed") return "queued";
+  if (type === "tool.uncertain") return "uncertain";
   if (type === "task.completed") return "completed";
   if (type === "task.failed") return "failed";
   if (type === "task.cancelled") return "cancelled";

@@ -29,9 +29,9 @@ export type BudgetTracker = {
   };
 };
 
-export function createBudgetTracker(budget: TaskBudget): BudgetTracker {
-  let modelTurns = 0;
-  let toolCalls = 0;
+export function createBudgetTracker(budget: TaskBudget, initial: { modelTurns?: number; toolCalls?: number } = {}): BudgetTracker {
+  let modelTurns = initial.modelTurns ?? 0;
+  let toolCalls = initial.toolCalls ?? 0;
 
   return {
     recordModelTurn() {

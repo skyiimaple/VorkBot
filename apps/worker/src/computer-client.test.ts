@@ -36,4 +36,33 @@ describe("ComputerClient", () => {
       status: 503
     } satisfies Partial<ComputerClientError>);
   });
+
+  it("starts and incrementally reads a terminal session", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        Response.json({ sessionId: "terminal_1", status: "running", startedAt: "2026-09-28T00:00:00.000Z" })
+      )
+      .mockResolvedValueOnce(
+        Response.json({
+          sessionId: "terminal_1",
+          output: "ok\n",
+          nextCursor: 3,
+          truncated: false,
+          status: "exited",
+          exitCode: 0
+        })
+      );
+    const client = new ComputerClient({ baseUrl: "http://computer:8080", token: "secret", fetch: fetchMock });
+
+    await expect(client.startTerminal("lease_1", "pnpm test")).resolves.toMatchObject({ sessionId: "terminal_1" });
+    await expect(client.readTerminal("lease_1", "terminal_1", 0)).resolves.toMatchObject({
+      output: "ok\n",
+      nextCursor: 3
+    });
+    expect(fetchMock.mock.calls.map(([url]) => String(url))).toEqual([
+      "http://computer:8080/v1/terminal/start",
+      "http://computer:8080/v1/terminal/read"
+    ]);
+  });
 });

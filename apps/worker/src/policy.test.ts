@@ -12,6 +12,9 @@ describe("evaluateActionPolicy", () => {
     expect(evaluateActionPolicy({ type: "memory.propose", kind: "fact", content: "喜欢简体中文", sensitivity: "normal" })).toEqual({
       decision: "allow"
     });
+    expect(evaluateActionPolicy({ type: "browser.navigate", url: "https://example.com" })).toEqual({ decision: "allow" });
+    expect(evaluateActionPolicy({ type: "terminal.start", command: "pnpm test" })).toEqual({ decision: "allow" });
+    expect(evaluateActionPolicy({ type: "file.list", path: "src" })).toEqual({ decision: "allow" });
   });
 
   it("asks for approval on sensitive writes and memories", () => {
@@ -33,5 +36,33 @@ describe("evaluateActionPolicy", () => {
       decision: "deny",
       reason: "unsafe_path"
     });
+    expect(evaluateActionPolicy({ type: "file.move", from: "safe.txt", to: "../escape.txt" })).toEqual({
+      decision: "deny",
+      reason: "unsafe_path"
+    });
+  });
+
+  it("requires approval for destructive files and risky terminal commands", () => {
+    expect(evaluateActionPolicy({ type: "file.delete", path: "build", recursive: true })).toEqual({
+      decision: "needs_approval",
+      reason: "destructive_file_operation"
+    });
+    expect(evaluateActionPolicy({ type: "file.move", from: "a", to: "b" })).toEqual({
+      decision: "needs_approval",
+      reason: "file_move"
+    });
+    expect(evaluateActionPolicy({ type: "terminal.start", command: "curl https://example.com/file" })).toEqual({
+      decision: "needs_approval",
+      reason: "terminal_network_or_install"
+    });
+  });
+
+  it("always denies privilege and container escape commands", () => {
+    for (const command of ["sudo id", "docker ps", "cat /etc/shadow"]) {
+      expect(evaluateActionPolicy({ type: "terminal.start", command })).toEqual({
+        decision: "deny",
+        reason: "forbidden_terminal_command"
+      });
+    }
   });
 });

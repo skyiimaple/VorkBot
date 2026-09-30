@@ -3,7 +3,7 @@ import type { TaskJob } from "@vork/contracts";
 import { createRepositories } from "@vork/database";
 import { getTestDatabaseUrl, resetFoundationDatabase } from "@vork/test-support";
 import { runAgentLoop } from "./agent-loop.js";
-import type { ComputerClientLike } from "./computer-client.js";
+import type { AgentComputerClientLike } from "./computer-client.js";
 import { FakeActionModel } from "./fake-action-model.js";
 import type { TaskNotifier } from "./queue.js";
 
@@ -42,7 +42,7 @@ describe("runAgentLoop", () => {
     };
   }
 
-  function mockComputer(): ComputerClientLike {
+  function mockComputer(): AgentComputerClientLike {
     return {
       acquire: vi.fn(async () => ({
         slotId: "slot_1",
@@ -62,6 +62,11 @@ describe("runAgentLoop", () => {
         bytes: 40,
         truncated: false
       })),
+      listFiles: vi.fn(async () => ({ entries: [] })),
+      statFile: vi.fn(async (_leaseId, path) => ({ path, type: "file" as const, size: 0, modifiedAt: new Date(0).toISOString() })),
+      makeDirectory: vi.fn(async (_leaseId, path) => ({ path })),
+      moveFile: vi.fn(async (_leaseId, from, to) => ({ from, to })),
+      deleteFile: vi.fn(async (_leaseId, path) => ({ path })),
       observe: vi.fn(async () => ({
         pageId: "page_1",
         url: "about:blank",
@@ -72,7 +77,12 @@ describe("runAgentLoop", () => {
       })),
       navigate: vi.fn(async () => ({ url: "about:blank" })),
       click: vi.fn(async () => ({ ref: "el_1" })),
-      type: vi.fn(async () => ({ ref: "el_1" }))
+      type: vi.fn(async () => ({ ref: "el_1" })),
+      scroll: vi.fn(async (_leaseId, deltaY) => ({ deltaY })),
+      startTerminal: vi.fn(async () => ({ sessionId: "terminal_1", status: "running" as const, startedAt: new Date(0).toISOString() })),
+      writeTerminal: vi.fn(async (_leaseId, sessionId) => ({ sessionId })),
+      readTerminal: vi.fn(async (_leaseId, sessionId, cursor = 0) => ({ sessionId, output: "", nextCursor: cursor, truncated: false, status: "running" as const })),
+      terminateTerminal: vi.fn(async (_leaseId, sessionId) => ({ sessionId }))
     };
   }
 
@@ -235,5 +245,32 @@ describe("runAgentLoop", () => {
     const memories = await repos.listMemories({ userId: job.userId, botId: job.botId });
     expect(memories.some((memory) => memory.content === "喜欢简体中文")).toBe(true);
     expect(memories.some((memory) => memory.kind === "working")).toBe(true);
+  });
+
+  it("pauses after an atomic side effect and resumes without repeating it", async () => {
+    const job = await createJob("[agent-file] 暂停恢复");
+    const computer = mockComputer();
+    let releaseWrite!: () => void;
+    const writeStarted = new Promise<void>((resolve) => {
+      vi.mocked(computer.writeFile).mockImplementationOnce(async () => {
+        resolve();
+        await new Promise<void>((release) => { releaseWrite = release; });
+        return { path: "notes/agent-hello.txt", bytes: 40 };
+      });
+    });
+
+    const firstRun = runAgentLoop(job, { repos, computer, notifier });
+    await writeStarted;
+    await repos.requestTaskPause(job.taskId, job.userId);
+    releaseWrite();
+    await firstRun;
+
+    expect((await repos.getTask(job.taskId))?.status).toBe("paused");
+    expect(computer.writeFile).toHaveBeenCalledTimes(1);
+
+    await repos.resumeTask(job.taskId, job.userId);
+    await runAgentLoop(job, { repos, computer, notifier });
+    expect((await repos.getTask(job.taskId))?.status).toBe("completed");
+    expect(computer.writeFile).toHaveBeenCalledTimes(1);
   });
 });

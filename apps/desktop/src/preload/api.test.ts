@@ -59,4 +59,15 @@ describe("createVorkApi", () => {
     expect(listener).toHaveBeenCalledExactlyOnceWith(taskEvent);
     expect(ipcRenderer.removeListener).toHaveBeenCalledWith("vork:task-event", eventListener);
   });
+
+  it("rejects invalid routine inputs before invoking IPC", async () => {
+    const ipcRenderer = { invoke: vi.fn(), on: vi.fn(), removeListener: vi.fn(), send: vi.fn() };
+    const api = createVorkApi(ipcRenderer);
+    await expect(api.request({
+      operation: "createRoutine",
+      input: { name: "坏任务", botId: "bot_1", prompt: "run", trigger: { type: "cron", expression: "" }, timezone: "" }
+    } as never)).rejects.toThrow();
+    await expect(api.request({ operation: "updateRoutine", input: { routineId: "routine_1", routine: {} } } as never)).rejects.toThrow();
+    expect(ipcRenderer.invoke).not.toHaveBeenCalled();
+  });
 });

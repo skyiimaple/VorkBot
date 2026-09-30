@@ -15,6 +15,20 @@
       "when": 1789970000000,
       "tag": "0002_phase3",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1790690400000,
+      "tag": "0003_task_recovery",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1790697600000,
+      "tag": "0004_routines",
+      "breakpoints": true
     }
   ]
 }

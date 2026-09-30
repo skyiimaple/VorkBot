@@ -8,6 +8,7 @@ export type FakeVorkApi = VorkApi & {
   request: ReturnType<typeof vi.fn>;
   createBot: ReturnType<typeof vi.fn>;
   subscribeCalls: Array<{ taskId: string; afterSequence: number }>;
+  replaceMessages(conversationId: string, nextMessages: Message[]): void;
   emitTaskEvent(taskId: string, event: TaskEvent): void;
 };
 
@@ -18,6 +19,7 @@ export function createFakeVorkApi(): FakeVorkApi {
   const listeners = new Map<string, Set<TaskEventListener>>();
   const subscribeCalls: Array<{ taskId: string; afterSequence: number }> = [];
   let nextId = 1;
+  let activeTask: Task | undefined;
 
   const createBot = vi.fn(async (input: { name: string; persona: string }) => {
     const id = `bot_${nextId++}`;
@@ -48,7 +50,8 @@ export function createFakeVorkApi(): FakeVorkApi {
       case "submitMessage": {
         const id = `message_${nextId++}`;
         const message: Message = { id, userId: "user_local", conversationId: input.input.conversationId, authorType: "user", content: input.input.content, createdAt: now };
-        const task: Task = { id: `task_${nextId++}`, userId: "user_local", botId: "bot_1", conversationId: input.input.conversationId, messageId: id, status: "queued", createdAt: now, updatedAt: now };
+        const task: Task = { id: `task_${nextId++}`, userId: "user_local", botId: "bot_1", conversationId: input.input.conversationId, messageId: id, status: "queued", pauseRequestedAt: null, retryCount: 0, nextRetryAt: null, createdAt: now, updatedAt: now };
+        activeTask = task;
         messages.set(input.input.conversationId, [...(messages.get(input.input.conversationId) ?? []), message]);
         return { operation: "submitMessage", data: { message, task } };
       }
@@ -60,10 +63,39 @@ export function createFakeVorkApi(): FakeVorkApi {
           conversationId: "conversation_1",
           messageId: "message_1",
           status: "cancelled",
+          pauseRequestedAt: null,
+          retryCount: 0,
+          nextRetryAt: null,
           createdAt: now,
           updatedAt: now
         };
         return { operation: "cancelTask", data: { task } };
+      }
+      case "pauseTask": {
+        if (!activeTask) throw new Error("no active task");
+        activeTask = { ...activeTask, status: "paused", pauseRequestedAt: null };
+        return { operation: "pauseTask", data: { task: activeTask } };
+      }
+      case "resumeTask": {
+        if (!activeTask) throw new Error("no active task");
+        activeTask = { ...activeTask, status: "queued", pauseRequestedAt: null };
+        return { operation: "resumeTask", data: { task: activeTask } };
+      }
+      case "getTaskControlState": {
+        if (!activeTask) throw new Error("no active task");
+        return { operation: "getTaskControlState", data: { task: activeTask } };
+      }
+      case "getActiveTask":
+        return { operation: "getActiveTask", data: { controlState: activeTask?.conversationId === input.input.conversationId ? { task: activeTask } : null } };
+      case "resolveApproval": {
+        if (!activeTask) throw new Error("no active task");
+        activeTask = { ...activeTask, status: input.input.decision === "approve" ? "queued" : "failed" };
+        return { operation: "resolveApproval", data: { task: activeTask } };
+      }
+      case "resolveUncertain": {
+        if (!activeTask) throw new Error("no active task");
+        activeTask = { ...activeTask, status: input.input.resolution === "cancel" ? "cancelled" : "queued" };
+        return { operation: "resolveUncertain", data: { task: activeTask } };
       }
       case "listTasks":
         return { operation: "listTasks", data: { tasks: [] } };
@@ -200,6 +232,9 @@ export function createFakeVorkApi(): FakeVorkApi {
     request,
     createBot,
     subscribeCalls,
+    replaceMessages(conversationId, nextMessages) {
+      messages.set(conversationId, [...nextMessages]);
+    },
     getComputerFrame: vi.fn(async () => ({
       base64: Buffer.from([0xff, 0xd8, 0xff, 0xd9]).toString("base64")
     })),

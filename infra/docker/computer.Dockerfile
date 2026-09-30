@@ -1,13 +1,13 @@
-FROM node:22-bookworm-slim
+FROM mcr.microsoft.com/playwright:v1.63.0-noble
 WORKDIR /app
 RUN corepack enable && corepack prepare pnpm@10.33.0 --activate
-COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
+COPY package.json pnpm-workspace.yaml pnpm-lock.yaml tsconfig.base.json ./
 COPY apps/computer ./apps/computer
 COPY packages ./packages
 RUN pnpm install --filter @vork/computer... --frozen-lockfile --ignore-scripts
-RUN pnpm --filter @vork/computer exec playwright install chromium --with-deps
 COPY apps/computer/public ./public
-RUN chown -R node:node /app
-USER node
+RUN mkdir -p /workspace /browser-profiles \
+    && chown -R pwuser:pwuser /app /workspace /browser-profiles
+USER pwuser
 EXPOSE 8080
 CMD ["pnpm", "--filter", "@vork/computer", "start"]

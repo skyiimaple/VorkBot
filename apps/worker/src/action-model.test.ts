@@ -26,9 +26,20 @@ describe("parseAgentActionFromModelOutput", () => {
       type: "task.fail",
       errorCode: "INVALID_AGENT_ACTION"
     });
-    expect(parseAgentActionFromModelOutput('{"type":"browser.navigate","url":"x"}')).toMatchObject({
+    expect(parseAgentActionFromModelOutput('{"type":"host.execute","command":"x"}')).toMatchObject({
       type: "task.fail",
       errorCode: "INVALID_AGENT_ACTION"
+    });
+  });
+
+  it("parses browser and terminal tool actions", () => {
+    expect(parseAgentActionFromModelOutput('{"type":"browser.navigate","url":"https://example.com"}')).toEqual({
+      type: "browser.navigate",
+      url: "https://example.com"
+    });
+    expect(parseAgentActionFromModelOutput('{"type":"terminal.start","command":"pnpm test"}')).toEqual({
+      type: "terminal.start",
+      command: "pnpm test"
     });
   });
 });
@@ -69,7 +80,7 @@ describe("OpenAICompatibleActionModel", () => {
     expect(body.messages[1].content).toContain("[agent-llm] 写个文件");
   });
 
-  it("maps HTTP errors to task.fail MODEL_UNAVAILABLE", async () => {
+  it("throws a transient error for retryable HTTP failures", async () => {
     const fetchImpl = vi.fn(async () => new Response("nope", { status: 503 }));
     const model = new OpenAICompatibleActionModel({
       apiKey: "sk-test",
@@ -85,7 +96,7 @@ describe("OpenAICompatibleActionModel", () => {
         userMessage: "x",
         turn: 1
       })
-    ).resolves.toMatchObject({ type: "task.fail", errorCode: "MODEL_UNAVAILABLE" });
+    ).rejects.toMatchObject({ name: "TransientOperationError", code: "MODEL_HTTP_503" });
   });
 });
 

@@ -109,6 +109,18 @@ function apiRequestDetails(request: ApiRequest): { path: string; method: "GET" |
         path: `/v1/tasks/${encodeURIComponent(request.input.taskId)}/cancel`,
         method: "POST"
       };
+    case "pauseTask":
+      return { path: `/v1/tasks/${encodeURIComponent(request.input.taskId)}/pause`, method: "POST", body: {} };
+    case "resumeTask":
+      return { path: `/v1/tasks/${encodeURIComponent(request.input.taskId)}/resume`, method: "POST", body: {} };
+    case "getTaskControlState":
+      return { path: `/v1/tasks/${encodeURIComponent(request.input.taskId)}/control-state`, method: "GET" };
+    case "getActiveTask":
+      return { path: `/v1/conversations/${encodeURIComponent(request.input.conversationId)}/active-task`, method: "GET" };
+    case "resolveApproval":
+      return { path: `/v1/tasks/${encodeURIComponent(request.input.taskId)}/approvals`, method: "POST", body: { decision: request.input.decision } };
+    case "resolveUncertain":
+      return { path: `/v1/tasks/${encodeURIComponent(request.input.taskId)}/uncertain-resolution`, method: "POST", body: { resolution: request.input.resolution } };
     case "listTasks":
       return { path: "/v1/tasks", method: "GET" };
     case "listSkills":
@@ -117,6 +129,25 @@ function apiRequestDetails(request: ApiRequest): { path: string; method: "GET" |
       return { path: "/v1/files", method: "GET" };
     case "listCredentials":
       return { path: "/v1/credentials", method: "GET" };
+    case "listRoutines":
+      return { path: "/v1/routines", method: "GET" };
+    case "createRoutine":
+      return { path: "/v1/routines", method: "POST", body: request.input };
+    case "updateRoutine":
+      return { path: `/v1/routines/${encodeURIComponent(request.input.routineId)}`, method: "PUT", body: request.input.routine };
+    case "deleteRoutine":
+      return { path: `/v1/routines/${encodeURIComponent(request.input.routineId)}`, method: "DELETE" };
+    case "enableRoutine":
+      return { path: `/v1/routines/${encodeURIComponent(request.input.routineId)}/enable`, method: "POST", body: {} };
+    case "pauseRoutine":
+      return { path: `/v1/routines/${encodeURIComponent(request.input.routineId)}/pause`, method: "POST", body: {} };
+    case "runRoutineNow":
+      return { path: `/v1/routines/${encodeURIComponent(request.input.routineId)}/run-now`, method: "POST", body: {} };
+    case "listRoutineRuns": {
+      const query = new URLSearchParams({ limit: String(request.input.limit) });
+      if (request.input.cursor) query.set("cursor", request.input.cursor);
+      return { path: `/v1/routines/${encodeURIComponent(request.input.routineId)}/runs?${query}`, method: "GET" };
+    }
     case "upsertCredential":
       return { path: "/v1/credentials", method: "PUT", body: request.input };
     case "deleteCredential":

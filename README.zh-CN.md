@@ -1,77 +1,62 @@
 # Vork 本地开发版
 
-这是单用户的本地开发版：可通过 Electron 创建 Bot、聊天；默认用确定性 FakeModel 流式回复，配置 `LLM_API_KEY` 后 Worker 走 OpenAI-compatible 真实模型（如 DeepSeek）。阶段 2 已接入云电脑（Compose 内独立 `computer` 服务）：文件工具、浏览器工具、JPEG 画面面板、人工接管状态机，以及三槽并发与浏览器限额。终端尚未接入。不要将此 Compose 配置直接暴露到公网。
+这是单用户的本地开发版：可通过 Electron 创建 Bot、聊天；默认使用确定性 FakeModel，配置 `LLM_API_KEY` 后可接入 OpenAI-compatible 模型。云电脑由 Compose 内独立 `computer` 服务提供文件、浏览器和终端工具、JPEG 画面面板及人工接管状态机。不要将此 Compose 配置直接暴露到公网。
 
 ## 环境与启动
 
-需要 macOS、Node.js 22+、pnpm 10+ 和 Docker。首次运行先执行 `pnpm install`。复制 `.env.example` 为 `.env`，其中密码仅适用于本地开发；如更改 `VORK_DB_PASSWORD`，同步更改 `DATABASE_URL`。不要将 `.env` 提交到仓库。
+需要 macOS、Node.js 22+、pnpm 10+ 和 Docker。首次运行先执行 `pnpm install`，并按需复制 `.env.example` 为 `.env`。
 
 ```sh
 docker compose up -d --build
 pnpm healthcheck
-pnpm smoke              # 可选：health → 建 Bot → 发「你好」→ 等助手回复
-pnpm smoke -- --file-demo   # 可选：再验 [file-demo]
+pnpm smoke
 pnpm dev
 ```
 
-如果本机镜像已与当前源码一致，可用 `docker compose up -d --no-build` 直接启动；它不会重建或拉取应用镜像。镜像较旧时健康检查仍可能通过，但新接口不会自动出现在旧容器中，需通过对应功能测试确认。
+镜像已与源码一致时可用 `docker compose up -d --no-build`。Electron 关闭后 Worker 仍在容器运行；数据库、工作区和浏览器 Profile 保存在 Docker 命名卷中。
 
-更完整的服务端口、冒烟步骤、退出码与真/假边界见 [`docs/handovers/2026-09-20-vork-local-stack-zh-CN.md`](docs/handovers/2026-09-20-vork-local-stack-zh-CN.md)。2026-09-28 的功能版 V1 基线验证结果与当前限制见 [`docs/handovers/2026-09-28-vork-functional-v1-foundation-status-zh-CN.md`](docs/handovers/2026-09-28-vork-functional-v1-foundation-status-zh-CN.md)。
+### 云电脑与 Agent
 
-Compose 依次启动 PostgreSQL、Valkey、数据库迁移、Computer、API 和 Worker；API 只监听本机 `127.0.0.1:3000`，Computer 仅在 Compose 内网可达（`http://computer:8080`）。Electron 使用本机 API，客户端关闭后 Worker 仍在容器里运行。数据库、工作区与浏览器 Profile 存放在 Docker 命名卷中。Computer 默认 `VORK_MAX_SLOTS=3`、浏览器并发上限 2，并配置 `mem_limit: 4g` / `cpus: 2`。
+- `[file-demo]`：写入并读取演示文件。
+- `[browser-demo]`：在自建测试页执行 observe/click/type。
+- 对话标题栏“电脑”：按需展开 JPEG 画面；默认折叠，折叠后停止轮询。
+- `[agent-file]` / `[agent-llm]`：执行受策略、预算、审批和恢复机制约束的 Agent 循环。
+- 敏感写入和敏感记忆进入 `waiting_approval`，不会绕过用户批准。
 
-### 云电脑演示（阶段 2）
-
-- `[file-demo]`：申请槽位 → 写入/读取 `notes/hello.txt` → 返回摘要。
-- `[browser-demo]`：打开自建测试页 → observe → click → type → 返回摘要。
-- 对话标题栏「电脑」：展开后每 500ms 经 API 拉取 JPEG 画面；折叠后停止轮询。
-- 槽位繁忙时任务保持排队，Worker 以 5s 退避延迟重试（最多约 5 分钟）。
-
-Computer 不映射宿主机端口，仅由 Worker/API 通过内网调用；桌面不持有 Computer 地址或 token。
-
-### 阶段 3：Agent 循环、审批、记忆与凭据
-
-在 `.env`（已 gitignore）填写：
+远程模型可在 `.env` 或桌面“模型凭据”中配置：
 
 ```sh
-LLM_API_KEY=sk-...          # 空则回退 FakeModel；也可改走 PUT /v1/credentials（响应不含明文）
+LLM_API_KEY=sk-...
 LLM_BASE_URL=https://api.deepseek.com
 LLM_MODEL=deepseek-v4-flash
 ```
 
-`LLM_BASE_URL` 可不带 `/v1`（Worker 会自动补全）。改完后重建/重启 Worker：`docker compose up -d --build worker`（需先跑迁移 `0002_phase3`）。环境变量优先于数据库凭据。
+### 定时任务（Routines）
 
-| 入口 | 行为 |
-|------|------|
-| 普通消息 | 流式聊天（Fake 或真模型） |
-| `[file-demo]` / `[browser-demo]` | Computer 固定剧本 |
-| `[agent-file]` | FakeActionModel 受控循环 + 预算 |
-| `[agent-llm]` | 有 key 时真模型 JSON 动作；无 key 回退 Fake 剧本 |
-| `sensitive/` 写入或敏感记忆 | 任务 `waiting_approval`；`POST /v1/tasks/:id/approvals` 批准记忆或拒绝 |
-| `POST /v1/skills` | 把已完成任务存为 **draft** Skill，不自动启用 |
+从左下角“本地用户”菜单进入“定时任务”。创建时选择 Bot、填写任务内容，并选择单次、每天、每周或标准五段 Cron；默认使用当前 IANA 时区（通常为 `Asia/Shanghai`）。
 
-验收（测试库）：
-
-```sh
-export TEST_DATABASE_URL=postgres://vork:vork_test_only@127.0.0.1:55432/vork_test
-pnpm --filter @vork/contracts test
-pnpm --filter @vork/worker exec vitest run src/agent-loop.test.ts src/policy.test.ts src/phase3-helpers.test.ts src/action-model.test.ts
-pnpm --filter @vork/api exec vitest run src/routes/manage.test.ts
-```
+- 每个 Routine 永久绑定一个专属对话，所有运行结果追加到同一对话。
+- 支持创建、编辑、暂停、恢复、立即运行和软删除；删除保留专属对话与历史。
+- Worker 每 5 秒扫描 PostgreSQL 中的到期计划；重启后错过多个周期最多补一次，`missedCount` 记录额外错过次数。
+- 同一个 Routine 严格单实例；上一次仍在运行时，新周期记录 `skipped_overlap`，不会并发或排队。
+- PostgreSQL 是长期计划的唯一可信来源，Redis/BullMQ 只承载已创建的 TaskJob。
 
 ## 测试与排查
 
 ```sh
-export TEST_DATABASE_URL=postgres://vork:vork_test_only@127.0.0.1:55432/vork_test
+export VORK_TEST_DATABASE_URL=postgres://vork:vork_dev_only@127.0.0.1:5432/vork_test
 pnpm test
 pnpm typecheck
 pnpm --filter @vork/desktop build
 pnpm e2e
+pnpm healthcheck
 docker compose logs api worker computer migrate
 ```
 
-`pnpm e2e` 需要 Compose 服务已就绪，并使用构建后的 Electron 入口。基础用例覆盖创建 Bot 与流式回复；`browser-demo` E2E 为推荐加严项（失败不挡阶段 2）。`pnpm healthcheck` 检查 API、数据库、Valkey、Worker 心跳与 Computer 健康状态。`pnpm smoke`（`scripts/dev-smoke.mjs`）用 HTTP 走一遍 health → 创建 Bot → 发消息 → 轮询至非空 assistant 回复（兼容 FakeModel / 真模型）；加 `--file-demo` / `--sse` / `--timeout=<ms>` 可加严。测试数据库使用单独的 `TEST_DATABASE_URL`，不要指向包含个人数据的数据库。本地跑浏览器集成测试需先安装 Playwright Chromium：`pnpm --filter @vork/computer exec playwright install chromium`。
+E2E 需要 Compose 服务已就绪，并使用构建后的 Electron 入口。测试数据库必须是独立的 `*_test` 数据库，不要指向个人开发数据。
 
 ## 停止与数据
 
-`docker compose down` 会停止容器，但保留 PostgreSQL、工作区与浏览器 Profile 命名卷。若确实要清空本地开发数据，请先自行确认卷名与内容；本项目的常规停止流程不会删除卷（不要使用 `docker compose down -v`，除非你明确要清空）。
+`docker compose down` 会停止容器但保留 PostgreSQL、工作区和浏览器 Profile。不要使用 `docker compose down -v`，除非你明确要清空这些数据。
+
+当前版本面向单用户开发环境，尚未包含生产部署、多用户权限、通知渠道或多 Agent 协作调度。

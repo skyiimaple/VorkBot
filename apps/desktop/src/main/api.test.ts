@@ -84,6 +84,9 @@ describe("cancelTask request", () => {
             conversationId: "conversation_1",
             messageId: "message_1",
             status: "cancelled",
+            pauseRequestedAt: null,
+            retryCount: 0,
+            nextRetryAt: null,
             createdAt: "2026-09-15T00:00:00.000Z",
             updatedAt: "2026-09-15T00:00:00.000Z"
           }
@@ -187,5 +190,25 @@ describe("credential requests", () => {
     expect(String(fetchImplementation.mock.calls[0]?.[0])).toContain("/v1/conversations/conversation_1");
     expect(fetchImplementation.mock.calls[0]?.[1]).toMatchObject({ method: "DELETE" });
     expect(result).toMatchObject({ operation: "deleteConversation", data: { conversationId: "conversation_1" } });
+  });
+});
+
+describe("routine requests", () => {
+  it("maps run-now and encoded history pagination to fixed HTTP endpoints", async () => {
+    const handlers = new Map<string, (...args: any[]) => unknown>();
+    const ipcMain = { handle: vi.fn((channel, handler) => handlers.set(channel, handler)), on: vi.fn() };
+    const run = {
+      id: "run_1", routineId: "routine/1", userId: "user_local", scheduledFor: "2026-09-30T00:00:00.000Z",
+      claimedAt: "2026-09-30T00:00:00.000Z", taskId: null, status: "skipped_overlap", missedCount: 0,
+      errorCode: null, createdAt: "2026-09-30T00:00:00.000Z", updatedAt: "2026-09-30T00:00:00.000Z"
+    };
+    const fetchImplementation = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ run, taskId: null }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ runs: [run], nextCursor: null }), { status: 200 }));
+    registerApiIpc(ipcMain as never, fetchImplementation as never, 0);
+    await handlers.get("vork:request")?.({}, { operation: "runRoutineNow", input: { routineId: "routine/1" } });
+    await handlers.get("vork:request")?.({}, { operation: "listRoutineRuns", input: { routineId: "routine/1", cursor: "run/0", limit: 10 } });
+    expect(String(fetchImplementation.mock.calls[0]?.[0])).toContain("/v1/routines/routine%2F1/run-now");
+    expect(String(fetchImplementation.mock.calls[1]?.[0])).toContain("/v1/routines/routine%2F1/runs?limit=10&cursor=run%2F0");
   });
 });

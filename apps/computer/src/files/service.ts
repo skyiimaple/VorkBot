@@ -1,4 +1,4 @@
-import { mkdir, open, readdir, stat, writeFile } from "node:fs/promises";
+import { mkdir, open, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import type { FileReadResult } from "@vork/contracts";
 import type { LeaseManager } from "../slots/lease-manager.js";
@@ -43,6 +43,14 @@ export class FileNotFoundError extends Error {
     super("not_found");
     this.name = "FileNotFoundError";
   }
+}
+
+export class TargetExistsError extends Error {
+  readonly code = "target_exists" as const;
+}
+
+export class DirectoryNotEmptyError extends Error {
+  readonly code = "directory_not_empty" as const;
 }
 
 type FileEntry = {
@@ -227,6 +235,58 @@ export class FileService {
     const lease = this.#assertLease(input.leaseId);
     const absolutePath = this.#resolvePath(lease.botId, input.path, root);
     await mkdir(absolutePath, { recursive: true });
+    return { path: input.path };
+  }
+
+  async move(input: {
+    leaseId: string;
+    from: string;
+    to: string;
+    root?: FileRoot;
+  }): Promise<{ from: string; to: string }> {
+    const root = input.root ?? "bot";
+    if (root === "shared") throw new ReadOnlyRootError();
+    const lease = this.#assertLease(input.leaseId);
+    const from = this.#resolvePath(lease.botId, input.from, root);
+    const to = this.#resolvePath(lease.botId, input.to, root);
+    try {
+      await stat(to);
+      throw new TargetExistsError();
+    } catch (error) {
+      if (!isEnoent(error)) throw error;
+    }
+    await mkdir(dirname(to), { recursive: true });
+    try {
+      await rename(from, to);
+    } catch (error) {
+      if (isEnoent(error)) throw new FileNotFoundError();
+      throw error;
+    }
+    return { from: input.from, to: input.to };
+  }
+
+  async delete(input: {
+    leaseId: string;
+    path: string;
+    root?: FileRoot;
+    recursive?: boolean;
+  }): Promise<{ path: string }> {
+    const root = input.root ?? "bot";
+    if (root === "shared") throw new ReadOnlyRootError();
+    const lease = this.#assertLease(input.leaseId);
+    const absolutePath = this.#resolvePath(lease.botId, input.path, root);
+    let targetStat;
+    try {
+      targetStat = await stat(absolutePath);
+    } catch (error) {
+      if (isEnoent(error)) throw new FileNotFoundError();
+      throw error;
+    }
+    if (targetStat.isDirectory() && !input.recursive) {
+      const entries = await readdir(absolutePath);
+      if (entries.length > 0) throw new DirectoryNotEmptyError();
+    }
+    await rm(absolutePath, { recursive: Boolean(input.recursive), force: false });
     return { path: input.path };
   }
 

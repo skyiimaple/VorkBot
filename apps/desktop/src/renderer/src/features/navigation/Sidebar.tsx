@@ -120,6 +120,7 @@ function SectionHeaderButton({
 }
 
 const manageItems = [
+  { label: "定时任务", path: "/routines" as const },
   { label: "任务队列", path: "/tasks" as const },
   { label: "Skills", path: "/skills" as const },
   { label: "文件", path: "/files" as const },
@@ -148,7 +149,7 @@ export function Sidebar({
   selectedConversationId?: string;
   onNewChat: () => void;
   onSelectConversation: (conversation: Conversation) => void;
-  onOpenManage: (path: "/tasks" | "/skills" | "/files" | "/credentials") => void;
+  onOpenManage: (path: "/routines" | "/tasks" | "/skills" | "/files" | "/credentials") => void;
   onOpenSettings: () => void;
 }) {
   const query = useUiStore((state) => state.sidebarQuery);

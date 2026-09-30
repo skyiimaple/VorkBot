@@ -18,7 +18,7 @@ END $$;
 
 ALTER TABLE tasks
   ADD CONSTRAINT tasks_status_check
-  CHECK (status IN ('queued', 'running', 'waiting_approval', 'completed', 'failed', 'cancelled'));
+  CHECK (status IN ('queued', 'running', 'waiting_approval', 'paused', 'uncertain', 'completed', 'failed', 'cancelled'));
 
 CREATE TABLE IF NOT EXISTS approvals (
   id text PRIMARY KEY,

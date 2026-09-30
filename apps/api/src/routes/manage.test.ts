@@ -208,7 +208,7 @@ describe("Manage routes", () => {
     });
     expect(approved.statusCode).toBe(200);
     expect(approved.json().task.status).toBe("queued");
-    expect(publishedJobs.some((job) => job.taskId === taskId && job.jobId?.startsWith(`${taskId}:resume:`))).toBe(
+    expect(publishedJobs.some((job) => job.taskId === taskId && job.jobId === `task:${taskId}:resume`)).toBe(
       true
     );
   });

@@ -90,6 +90,7 @@ services:
       LLM_MODEL: ${LLM_MODEL:-deepseek-v4-flash}
       VORK_MODEL_PROVIDER: ${VORK_MODEL_PROVIDER:-}
       LLM_TIMEOUT_MS: ${LLM_TIMEOUT_MS:-}
+      VORK_ROUTINE_SCAN_INTERVAL_MS: ${VORK_ROUTINE_SCAN_INTERVAL_MS:-5000}
     depends_on:
       computer:
         condition: service_started

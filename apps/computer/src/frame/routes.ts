@@ -23,7 +23,7 @@ export function registerFrameRoutes(
       if (lease.slotId !== slotId) {
         return reply.code(404).send({ code: "slot_not_found" });
       }
-      if (lease.kind !== "browser") {
+      if (lease.kind !== "browser" && lease.kind !== "agent") {
         return reply.code(404).send({ code: "browser_unavailable" });
       }
 

@@ -17,6 +17,8 @@ import {
   type TaskEventSubscriber
 } from "./services/event-stream.js";
 import { registerTaskEventRoutes } from "./routes/task-events.js";
+import { registerTaskControlRoutes } from "./routes/task-controls.js";
+import { registerRoutineRoutes } from "./routes/routines.js";
 
 const ErrorResponseSchema = z.object({ error: z.string().min(1) });
 
@@ -38,6 +40,8 @@ export function buildApp(dependencies: ApiDependencies): FastifyInstance {
   registerConversationRoutes(app, routeDependencies);
   registerTaskListRoutes(app, routeDependencies);
   registerTaskEventRoutes(app, routeDependencies);
+  registerTaskControlRoutes(app, routeDependencies);
+  registerRoutineRoutes(app, routeDependencies);
   registerSkillRoutes(app, routeDependencies);
   registerWorkspaceFileRoutes(app);
   registerCredentialRoutes(app, routeDependencies);

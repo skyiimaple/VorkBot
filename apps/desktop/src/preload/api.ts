@@ -8,8 +8,19 @@ import {
   ListWorkspaceFilesResponseSchema,
   MessageSchema,
   ModelCredentialWriteSchema,
+  ActiveTaskResponseSchema,
+  TaskControlStateSchema,
+  UncertainResolutionInputSchema,
   TaskEventSchema,
   TaskSchema
+  ,CreateRoutineInputSchema
+  ,UpdateRoutineInputSchema
+  ,ListRoutineRunsInputSchema
+  ,ListRoutinesResponseSchema
+  ,CreateRoutineResponseSchema
+  ,RoutineResponseSchema
+  ,RunRoutineNowResponseSchema
+  ,ListRoutineRunsResponseSchema
 } from "@vork/contracts";
 import { z } from "zod";
 
@@ -28,10 +39,24 @@ export const ApiRequestSchema = z.discriminatedUnion("operation", [
     })
     .strict(),
   z.object({ operation: z.literal("cancelTask"), input: z.object({ taskId: IdentifierSchema }).strict() }).strict(),
+  z.object({ operation: z.literal("pauseTask"), input: z.object({ taskId: IdentifierSchema }).strict() }).strict(),
+  z.object({ operation: z.literal("resumeTask"), input: z.object({ taskId: IdentifierSchema }).strict() }).strict(),
+  z.object({ operation: z.literal("getTaskControlState"), input: z.object({ taskId: IdentifierSchema }).strict() }).strict(),
+  z.object({ operation: z.literal("getActiveTask"), input: z.object({ conversationId: IdentifierSchema }).strict() }).strict(),
+  z.object({ operation: z.literal("resolveApproval"), input: z.object({ taskId: IdentifierSchema, decision: z.enum(["approve", "reject"]) }).strict() }).strict(),
+  z.object({ operation: z.literal("resolveUncertain"), input: z.object({ taskId: IdentifierSchema }).merge(UncertainResolutionInputSchema).strict() }).strict(),
   z.object({ operation: z.literal("listTasks"), input: z.object({}).strict() }).strict(),
   z.object({ operation: z.literal("listSkills"), input: z.object({}).strict() }).strict(),
   z.object({ operation: z.literal("listFiles"), input: z.object({}).strict() }).strict(),
   z.object({ operation: z.literal("listCredentials"), input: z.object({}).strict() }).strict(),
+  z.object({ operation: z.literal("listRoutines"), input: z.object({}).strict() }).strict(),
+  z.object({ operation: z.literal("createRoutine"), input: CreateRoutineInputSchema }).strict(),
+  z.object({ operation: z.literal("updateRoutine"), input: z.object({ routineId: IdentifierSchema, routine: UpdateRoutineInputSchema }).strict() }).strict(),
+  z.object({ operation: z.literal("deleteRoutine"), input: z.object({ routineId: IdentifierSchema }).strict() }).strict(),
+  z.object({ operation: z.literal("enableRoutine"), input: z.object({ routineId: IdentifierSchema }).strict() }).strict(),
+  z.object({ operation: z.literal("pauseRoutine"), input: z.object({ routineId: IdentifierSchema }).strict() }).strict(),
+  z.object({ operation: z.literal("runRoutineNow"), input: z.object({ routineId: IdentifierSchema }).strict() }).strict(),
+  z.object({ operation: z.literal("listRoutineRuns"), input: z.object({ routineId: IdentifierSchema }).merge(ListRoutineRunsInputSchema).strict() }).strict(),
   z.object({ operation: z.literal("upsertCredential"), input: ModelCredentialWriteSchema.strict() }).strict(),
   z
     .object({
@@ -55,10 +80,24 @@ export const ApiResponseSchema = z.discriminatedUnion("operation", [
   z.object({ operation: z.literal("listMessages"), data: z.object({ messages: z.array(MessageSchema) }).strict() }).strict(),
   z.object({ operation: z.literal("submitMessage"), data: z.object({ message: MessageSchema, task: TaskSchema }).strict() }).strict(),
   z.object({ operation: z.literal("cancelTask"), data: z.object({ task: TaskSchema }).strict() }).strict(),
+  z.object({ operation: z.literal("pauseTask"), data: z.object({ task: TaskSchema }).strict() }).strict(),
+  z.object({ operation: z.literal("resumeTask"), data: z.object({ task: TaskSchema }).strict() }).strict(),
+  z.object({ operation: z.literal("getTaskControlState"), data: TaskControlStateSchema }).strict(),
+  z.object({ operation: z.literal("getActiveTask"), data: ActiveTaskResponseSchema }).strict(),
+  z.object({ operation: z.literal("resolveApproval"), data: z.object({ task: TaskSchema }).strict() }).strict(),
+  z.object({ operation: z.literal("resolveUncertain"), data: z.object({ task: TaskSchema }).strict() }).strict(),
   z.object({ operation: z.literal("listTasks"), data: ListTasksResponseSchema }).strict(),
   z.object({ operation: z.literal("listSkills"), data: ListSkillsResponseSchema }).strict(),
   z.object({ operation: z.literal("listFiles"), data: ListWorkspaceFilesResponseSchema }).strict(),
   z.object({ operation: z.literal("listCredentials"), data: ListModelCredentialsResponseSchema }).strict(),
+  z.object({ operation: z.literal("listRoutines"), data: ListRoutinesResponseSchema }).strict(),
+  z.object({ operation: z.literal("createRoutine"), data: CreateRoutineResponseSchema }).strict(),
+  z.object({ operation: z.literal("updateRoutine"), data: RoutineResponseSchema }).strict(),
+  z.object({ operation: z.literal("deleteRoutine"), data: RoutineResponseSchema }).strict(),
+  z.object({ operation: z.literal("enableRoutine"), data: RoutineResponseSchema }).strict(),
+  z.object({ operation: z.literal("pauseRoutine"), data: RoutineResponseSchema }).strict(),
+  z.object({ operation: z.literal("runRoutineNow"), data: RunRoutineNowResponseSchema }).strict(),
+  z.object({ operation: z.literal("listRoutineRuns"), data: ListRoutineRunsResponseSchema }).strict(),
   z.object({ operation: z.literal("upsertCredential"), data: ListModelCredentialsResponseSchema }).strict(),
   z.object({ operation: z.literal("deleteCredential"), data: ListModelCredentialsResponseSchema }).strict(),
   z

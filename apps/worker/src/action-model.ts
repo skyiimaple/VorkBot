@@ -2,6 +2,7 @@ import { AgentActionSchema, type AgentAction } from "@vork/contracts";
 import type { ActionModel, ActionModelContext } from "./fake-action-model.js";
 import { createAgentFileDemoActions, FakeActionModel } from "./fake-action-model.js";
 import { normalizeOpenAICompatibleBaseUrl } from "./openai-compatible-model.js";
+import { TransientOperationError } from "./transient-retry.js";
 
 const DEFAULT_LLM_BASE_URL = "https://api.deepseek.com";
 const DEFAULT_LLM_MODEL = "deepseek-v4-flash";
@@ -18,6 +19,20 @@ const ACTION_SYSTEM_PROMPT = [
   "type 必须是以下之一：",
   '- {"type":"file.write","path":"相对路径","content":"文本"}',
   '- {"type":"file.read","path":"相对路径"}',
+  '- {"type":"file.list","path":"可选相对目录"}',
+  '- {"type":"file.stat","path":"相对路径"}',
+  '- {"type":"file.mkdir","path":"相对目录"}',
+  '- {"type":"file.move","from":"源相对路径","to":"目标相对路径"}',
+  '- {"type":"file.delete","path":"相对路径","recursive":false}',
+  '- {"type":"browser.navigate","url":"URL"}',
+  '- {"type":"browser.observe"}',
+  '- {"type":"browser.click","ref":"观察结果中的元素 ref"}',
+  '- {"type":"browser.type","ref":"元素 ref","text":"文本"}',
+  '- {"type":"browser.scroll","deltaY":600}',
+  '- {"type":"terminal.start","command":"工作区内命令"}',
+  '- {"type":"terminal.write","sessionId":"会话 ID","input":"输入"}',
+  '- {"type":"terminal.read","sessionId":"会话 ID","cursor":0}',
+  '- {"type":"terminal.terminate","sessionId":"会话 ID"}',
   '- {"type":"message.reply","text":"给用户的回复"}',
   '- {"type":"task.complete"}',
   '- {"type":"task.fail","errorCode":"CODE","message":"可选说明"}',
@@ -109,6 +124,8 @@ export class OpenAICompatibleActionModel implements ActionModel {
       "请只输出下一个动作的 JSON。"
     ].join("\n");
 
+    const signals = [AbortSignal.timeout(this.timeoutMs)];
+    if (ctx.signal) signals.push(ctx.signal);
     const response = await this.fetchImpl(`${this.baseUrl}/chat/completions`, {
       method: "POST",
       headers: {
@@ -125,11 +142,14 @@ export class OpenAICompatibleActionModel implements ActionModel {
           { role: "user", content: userContent }
         ]
       }),
-      signal: AbortSignal.timeout(this.timeoutMs)
+      signal: signals.length === 1 ? signals[0] : AbortSignal.any(signals)
     });
 
     if (!response.ok) {
       const detail = (await response.text().catch(() => "")).slice(0, 200);
+      if (response.status === 429 || response.status >= 500) {
+        throw new TransientOperationError(`MODEL_HTTP_${response.status}`);
+      }
       return {
         type: "task.fail",
         errorCode: "MODEL_UNAVAILABLE",

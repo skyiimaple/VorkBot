@@ -1,16 +1,21 @@
 import Redis from "ioredis";
+import { Queue } from "bullmq";
+import type { TaskJob } from "@vork/contracts";
 import { createRepositories } from "@vork/database";
 import { z } from "zod";
 import { createComputerClientFromEnv } from "./computer-client.js";
 import { createModelFromEnv } from "./create-model.js";
 import { startWorkerHeartbeat } from "./heartbeat.js";
-import { createTaskWorker, RedisTaskNotifier } from "./queue.js";
+import { createTaskWorker, RedisTaskNotifier, TASK_JOB_NAME, TASK_QUEUE_NAME } from "./queue.js";
+import { recoverTasksOnStartup } from "./task-recovery.js";
+import { scanDueRoutines, startRoutineScheduler } from "./routine-scheduler.js";
 
 const WorkerConfigSchema = z.object({
   databaseUrl: z.string().url().optional(),
   redisUrl: z.string().url().default("redis://127.0.0.1:6379"),
   computerUrl: z.string().url().optional(),
-  computerToken: z.string().min(1).optional()
+  computerToken: z.string().min(1).optional(),
+  routineScanIntervalMs: z.coerce.number().int().min(100).default(5_000)
 });
 
 export async function start(): Promise<void> {
@@ -18,7 +23,8 @@ export async function start(): Promise<void> {
     databaseUrl: process.env.DATABASE_URL,
     redisUrl: process.env.REDIS_URL,
     computerUrl: process.env.VORK_COMPUTER_URL,
-    computerToken: process.env.VORK_COMPUTER_TOKEN
+    computerToken: process.env.VORK_COMPUTER_TOKEN,
+    routineScanIntervalMs: process.env.VORK_ROUTINE_SCAN_INTERVAL_MS
   });
   const repos = createRepositories({ databaseUrl: config.databaseUrl });
   const workerRedis = new Redis(config.redisUrl, { maxRetriesPerRequest: null });
@@ -38,6 +44,19 @@ export async function start(): Promise<void> {
     if (storedCredential.model) process.env.LLM_MODEL = storedCredential.model;
   }
   const model = createModelFromEnv();
+  const recoveryQueue = new Queue<TaskJob>(TASK_QUEUE_NAME, { connection: workerRedis });
+  await recoverTasksOnStartup(
+    {
+      publish: (job, options) => recoveryQueue.add(TASK_JOB_NAME, job, options)
+    },
+    repos
+  );
+  const routineSchedulerDependencies = {
+    claimDueRoutineRuns: repos.claimDueRoutineRuns,
+    markRoutinePublicationFailed: repos.markRoutinePublicationFailed,
+    publish: (job: TaskJob, options?: { jobId?: string }) => recoveryQueue.add(TASK_JOB_NAME, job, options)
+  };
+  await scanDueRoutines(routineSchedulerDependencies, new Date());
   const worker = createTaskWorker(
     {
       repos,
@@ -48,12 +67,18 @@ export async function start(): Promise<void> {
     workerRedis
   );
   await worker.waitUntilReady();
+  const stopRoutineScheduler = startRoutineScheduler(routineSchedulerDependencies, {
+    immediate: false,
+    intervalMs: config.routineScanIntervalMs,
+    onError: (error) => console.error("Routine scheduler scan failed", error)
+  });
   const stopHeartbeat = await startWorkerHeartbeat(publisherRedis);
 
   const shutdown = async () => {
+    await stopRoutineScheduler();
     await stopHeartbeat();
     await worker.close();
-    await Promise.all([workerRedis.quit(), publisherRedis.quit(), repos.close()]);
+    await Promise.all([recoveryQueue.close(), workerRedis.quit(), publisherRedis.quit(), repos.close()]);
   };
   process.once("SIGINT", () => void shutdown());
   process.once("SIGTERM", () => void shutdown());

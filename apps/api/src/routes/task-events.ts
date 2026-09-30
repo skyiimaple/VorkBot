@@ -3,6 +3,7 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import type { ApiDependencies } from "../app.js";
 import { TaskEventStream } from "../services/event-stream.js";
+import { publishRecoverableTask } from "../services/task-publication.js";
 
 const TaskParamsSchema = z.object({ id: z.string().trim().min(1) });
 const TaskEventsQuerySchema = z.object({ after: z.coerce.number().int().nonnegative().default(0) });
@@ -77,18 +78,8 @@ export function registerTaskEventRoutes(
       const nextTask = TaskSchema.parse(resolved.task);
       if (resolved.resume) {
         try {
-          await dependencies.queue.publish(
-            {
-              taskId: nextTask.id,
-              userId: nextTask.userId,
-              botId: nextTask.botId,
-              conversationId: nextTask.conversationId,
-              messageId: nextTask.messageId
-            },
-            { jobId: `${nextTask.id}:resume:${resolved.resume.approvalId}` }
-          );
+          await publishRecoverableTask(nextTask, dependencies.queue, dependencies.repositories);
         } catch {
-          await dependencies.repositories.failTask(nextTask.id, "TASK_PUBLICATION_FAILED", "批准后续跑入队失败。");
           return reply.code(500).send(ErrorResponseSchema.parse({ error: "批准后续跑入队失败" }));
         }
       }

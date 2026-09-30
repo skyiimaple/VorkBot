@@ -50,6 +50,60 @@ describe("useConversation", () => {
     expect(api.subscribeCalls).toEqual([{ taskId, afterSequence: 0 }]);
   });
 
+  it("loads a persisted assistant reply when a task completes without message deltas", async () => {
+    const api = createFakeVorkApi();
+    window.vorkApi = api;
+    const { result } = renderHook(() => useConversation("conversation_1"));
+
+    await waitFor(() => expect(result.current.connectionState).toBe("ready"));
+    await act(async () => {
+      await result.current.sendMessage("[browser-demo]");
+    });
+
+    const taskId = result.current.activeTask!.id;
+    const userMessage = result.current.messages[0]!;
+    api.replaceMessages("conversation_1", [
+      userMessage,
+      {
+        id: "message_assistant",
+        userId: "user_local",
+        conversationId: "conversation_1",
+        authorType: "assistant",
+        content: "浏览器演示完成",
+        createdAt: now
+      }
+    ]);
+
+    act(() => {
+      api.emitTaskEvent(taskId, {
+        id: "event_completed_message",
+        taskId,
+        userId: "user_local",
+        sequence: 2,
+        type: "message.completed",
+        payload: { messageId: "message_assistant" },
+        createdAt: now
+      });
+      api.emitTaskEvent(taskId, {
+        id: "event_completed_task",
+        taskId,
+        userId: "user_local",
+        sequence: 3,
+        type: "task.completed",
+        payload: { messageId: "message_assistant" },
+        createdAt: now
+      });
+    });
+
+    await waitFor(() =>
+      expect(result.current.messages.map((message) => message.content)).toEqual([
+        "[browser-demo]",
+        "浏览器演示完成"
+      ])
+    );
+    expect(result.current.activeTask?.status).toBe("completed");
+  });
+
   it("cancels the active task when the user says 停", async () => {
     const api = createFakeVorkApi();
     window.vorkApi = api;

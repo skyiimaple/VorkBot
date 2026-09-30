@@ -25,6 +25,39 @@ describe("BrowserSession", () => {
     }
   });
 
+  it("shares one browser launch across concurrent start requests", async () => {
+    profileRoot = await mkdtemp(join(tmpdir(), "vork-browser-"));
+    let finishLaunch: ((context: unknown) => void) | undefined;
+    const page = { on: vi.fn() };
+    let closeHandler: (() => void) | undefined;
+    const context = {
+      pages: () => [page],
+      newPage: async () => page,
+      on: vi.fn((event: string, handler: () => void) => {
+        if (event === "close") closeHandler = handler;
+      }),
+      close: vi.fn(async () => closeHandler?.())
+    };
+    launchPersistentContext.mockImplementation(() => new Promise((resolve) => {
+      finishLaunch = resolve;
+    }));
+    const session = new BrowserSession({
+      slotId: "slot_1",
+      profileDir: join(profileRoot, "slot_1")
+    });
+
+    const first = session.start();
+    const second = session.start();
+    await vi.waitFor(() => expect(finishLaunch).toBeTypeOf("function"));
+    finishLaunch?.(context);
+    await Promise.all([first, second]);
+
+    expect(launchPersistentContext).toHaveBeenCalledTimes(1);
+    await session.stop();
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    expect(launchPersistentContext).toHaveBeenCalledTimes(1);
+  });
+
   it("observes interactive elements after navigation", async () => {
     profileRoot = await mkdtemp(join(tmpdir(), "vork-browser-"));
     const click = vi.fn();

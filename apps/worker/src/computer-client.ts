@@ -2,9 +2,13 @@ import {
   AcquireSlotInputSchema,
   FileReadResultSchema,
   SlotLeaseSchema,
+  TerminalReadResultSchema,
+  TerminalStartResultSchema,
   type AcquireSlotInput,
   type FileReadResult,
-  type SlotLease
+  type SlotLease,
+  type TerminalReadResult,
+  type TerminalStartResult
 } from "@vork/contracts";
 import { z } from "zod";
 
@@ -48,6 +52,19 @@ export interface ComputerClientLike {
   navigate(leaseId: string, url: string): Promise<{ url: string }>;
   click(leaseId: string, ref: string): Promise<{ ref: string }>;
   type(leaseId: string, ref: string, text: string): Promise<{ ref: string }>;
+}
+
+export interface AgentComputerClientLike extends ComputerClientLike {
+  listFiles(leaseId: string, path?: string): Promise<{ entries: Array<{ name: string; type: "file" | "directory"; size?: number }> }>;
+  statFile(leaseId: string, path: string): Promise<{ path: string; type: "file" | "directory"; size: number; modifiedAt: string }>;
+  makeDirectory(leaseId: string, path: string): Promise<{ path: string }>;
+  moveFile(leaseId: string, from: string, to: string): Promise<{ from: string; to: string }>;
+  deleteFile(leaseId: string, path: string, recursive?: boolean): Promise<{ path: string }>;
+  scroll(leaseId: string, deltaY: number): Promise<{ deltaY: number }>;
+  startTerminal(leaseId: string, command?: string): Promise<TerminalStartResult>;
+  writeTerminal(leaseId: string, sessionId: string, input: string): Promise<{ sessionId: string }>;
+  readTerminal(leaseId: string, sessionId: string, cursor?: number): Promise<TerminalReadResult>;
+  terminateTerminal(leaseId: string, sessionId: string): Promise<{ sessionId: string }>;
 }
 
 export class ComputerClientError extends Error {
@@ -123,6 +140,30 @@ export class ComputerClient implements ComputerClientLike {
     return FileReadResultSchema.parse(await response.json());
   }
 
+  async listFiles(leaseId: string, path?: string) {
+    const response = await this.request("/v1/files/list", { method: "POST", body: JSON.stringify({ leaseId, path }) });
+    if (!response.ok) throw await this.toError(response);
+    return z.object({ entries: z.array(z.object({ name: z.string(), type: z.enum(["file", "directory"]), size: z.number().optional() })) }).parse(await response.json());
+  }
+
+  async statFile(leaseId: string, path: string) {
+    const response = await this.request("/v1/files/stat", { method: "POST", body: JSON.stringify({ leaseId, path }) });
+    if (!response.ok) throw await this.toError(response);
+    return z.object({ path: z.string(), type: z.enum(["file", "directory"]), size: z.number(), modifiedAt: z.string() }).parse(await response.json());
+  }
+
+  async makeDirectory(leaseId: string, path: string) {
+    return this.simpleJson("/v1/files/mkdir", { leaseId, path }, z.object({ path: z.string() }));
+  }
+
+  async moveFile(leaseId: string, from: string, to: string) {
+    return this.simpleJson("/v1/files/move", { leaseId, from, to }, z.object({ from: z.string(), to: z.string() }));
+  }
+
+  async deleteFile(leaseId: string, path: string, recursive?: boolean) {
+    return this.simpleJson("/v1/files/delete", { leaseId, path, recursive }, z.object({ path: z.string() }));
+  }
+
   async observe(leaseId: string): Promise<ObserveResult> {
     const response = await this.request("/v1/browser/observe", {
       method: "POST",
@@ -165,6 +206,32 @@ export class ComputerClient implements ComputerClientLike {
       throw await this.toError(response);
     }
     return z.object({ ref: z.string() }).parse(await response.json());
+  }
+
+  async scroll(leaseId: string, deltaY: number): Promise<{ deltaY: number }> {
+    return this.simpleJson("/v1/browser/scroll", { leaseId, deltaY }, z.object({ deltaY: z.number() }));
+  }
+
+  async startTerminal(leaseId: string, command?: string): Promise<TerminalStartResult> {
+    return this.simpleJson("/v1/terminal/start", { leaseId, command }, TerminalStartResultSchema);
+  }
+
+  async writeTerminal(leaseId: string, sessionId: string, input: string): Promise<{ sessionId: string }> {
+    return this.simpleJson("/v1/terminal/write", { leaseId, sessionId, input }, z.object({ sessionId: z.string() }));
+  }
+
+  async readTerminal(leaseId: string, sessionId: string, cursor?: number): Promise<TerminalReadResult> {
+    return this.simpleJson("/v1/terminal/read", { leaseId, sessionId, cursor }, TerminalReadResultSchema);
+  }
+
+  async terminateTerminal(leaseId: string, sessionId: string): Promise<{ sessionId: string }> {
+    return this.simpleJson("/v1/terminal/terminate", { leaseId, sessionId }, z.object({ sessionId: z.string() }));
+  }
+
+  private async simpleJson<T>(path: string, body: unknown, schema: z.ZodType<T>): Promise<T> {
+    const response = await this.request(path, { method: "POST", body: JSON.stringify(body) });
+    if (!response.ok) throw await this.toError(response);
+    return schema.parse(await response.json());
   }
 
   private async request(path: string, init: RequestInit): Promise<Response> {

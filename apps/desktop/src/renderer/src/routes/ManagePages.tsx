@@ -12,6 +12,7 @@ import {
   Clock3,
   Download,
   Plus
+  ,CalendarClock
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -20,6 +21,7 @@ import { cn } from "@/lib/utils";
 import { useUiStore } from "@/stores/ui-store";
 
 const manageNav = [
+  { title: "定时任务", description: "计划执行与运行历史", path: "/routines" as const, icon: CalendarClock },
   { title: "任务队列", description: "异步任务与待处理事项", path: "/tasks" as const, icon: ListTodo },
   { title: "Skills", description: "可复用操作手册与技能草稿", path: "/skills" as const, icon: Sparkles },
   { title: "文件", description: "云电脑工作区文件", path: "/files" as const, icon: FileText },
@@ -34,7 +36,7 @@ export function ManagePage({
 }: {
   title: string;
   description: string;
-  path: "/tasks" | "/skills" | "/files" | "/credentials";
+  path: "/routines" | "/tasks" | "/skills" | "/files" | "/credentials";
   children?: React.ReactNode;
 }) {
   const navigate = useNavigate();

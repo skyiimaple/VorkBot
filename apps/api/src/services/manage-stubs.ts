@@ -13,6 +13,8 @@ const STATUS_LABELS = {
   queued: "排队",
   running: "运行中",
   waiting_approval: "等待审批",
+  paused: "已暂停",
+  uncertain: "结果待确认",
   completed: "已完成",
   failed: "失败",
   cancelled: "已取消"

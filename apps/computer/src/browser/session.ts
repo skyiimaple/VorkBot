@@ -41,11 +41,13 @@ export class BrowserSession {
 
   #context?: BrowserContext;
   #page?: Page;
+  #startPromise?: Promise<void>;
   #pageId = "page_1";
   #consoleErrors: string[] = [];
   #refSelectors = new Map<string, string>();
   #crashCount = 0;
   #recovering = false;
+  #stopping = false;
 
   constructor(options: BrowserSessionOptions) {
     this.#slotId = options.slotId;
@@ -64,16 +66,27 @@ export class BrowserSession {
     if (this.#context) {
       return;
     }
-    await this.#launchBrowser();
+    if (!this.#startPromise) {
+      this.#startPromise = this.#launchBrowser().finally(() => {
+        this.#startPromise = undefined;
+      });
+    }
+    await this.#startPromise;
   }
 
   async stop(): Promise<void> {
-    this.#refSelectors.clear();
-    this.#consoleErrors = [];
-    await this.#context?.close().catch(() => undefined);
-    this.#context = undefined;
-    this.#page = undefined;
-    this.#crashCount = 0;
+    this.#stopping = true;
+    try {
+      await this.#startPromise?.catch(() => undefined);
+      this.#refSelectors.clear();
+      this.#consoleErrors = [];
+      await this.#context?.close().catch(() => undefined);
+      this.#context = undefined;
+      this.#page = undefined;
+      this.#crashCount = 0;
+    } finally {
+      this.#stopping = false;
+    }
   }
 
   async observe(): Promise<ObserveResult> {
@@ -193,7 +206,7 @@ export class BrowserSession {
   }
 
   async #handleCrash(): Promise<void> {
-    if (this.#recovering) {
+    if (this.#stopping || this.#recovering) {
       return;
     }
     this.#recovering = true;
@@ -205,8 +218,9 @@ export class BrowserSession {
       while (this.#crashCount < this.#maxCrashRetries) {
         this.#crashCount += 1;
         await new Promise((resolve) => setTimeout(resolve, this.#crashRetryIntervalMs));
+        if (this.#stopping) return;
         try {
-          await this.#launchBrowser();
+          await this.start();
           this.#onRecovered?.();
           return;
         } catch {
