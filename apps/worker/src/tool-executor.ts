@@ -44,6 +44,11 @@ export async function executeToolAction(
     existingToolCall?: ToolCall;
   }
 ): Promise<string> {
+  const previous = deps.existingToolCall;
+  if (previous?.status === "succeeded") return previous.observation ?? "工具已执行完成";
+  if (previous?.status === "uncertain" || (previous?.status === "executing" && previous.risk === "side_effect")) {
+    throw new UncertainSideEffectError(previous.id);
+  }
   await deps.repos.appendTaskEvent({
     taskId: deps.taskId,
     type: TOOL_EVENT_TYPES.STARTED,

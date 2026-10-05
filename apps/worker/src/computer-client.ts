@@ -228,7 +228,7 @@ export class ComputerClient implements ComputerClientLike {
     return this.simpleJson("/v1/terminal/terminate", { leaseId, sessionId }, z.object({ sessionId: z.string() }));
   }
 
-  private async simpleJson<T>(path: string, body: unknown, schema: z.ZodType<T>): Promise<T> {
+  private async simpleJson<T>(path: string, body: unknown, schema: { parse(input: unknown): T }): Promise<T> {
     const response = await this.request(path, { method: "POST", body: JSON.stringify(body) });
     if (!response.ok) throw await this.toError(response);
     return schema.parse(await response.json());

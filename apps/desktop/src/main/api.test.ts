@@ -191,6 +191,22 @@ describe("credential requests", () => {
     expect(fetchImplementation.mock.calls[0]?.[1]).toMatchObject({ method: "DELETE" });
     expect(result).toMatchObject({ operation: "deleteConversation", data: { conversationId: "conversation_1" } });
   });
+
+  it("preserves an API error message for the renderer", async () => {
+    const handlers = new Map<string, (...args: any[]) => unknown>();
+    const ipcMain = { handle: vi.fn((channel, handler) => handlers.set(channel, handler)), on: vi.fn() };
+    const fetchImplementation = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ error: "该对话属于定时任务，请先删除定时任务" }), {
+        status: 409,
+        headers: { "content-type": "application/json" }
+      })
+    );
+    registerApiIpc(ipcMain as never, fetchImplementation as never, 0);
+
+    await expect(
+      handlers.get("vork:request")?.({}, { operation: "deleteConversation", input: { conversationId: "conversation_1" } })
+    ).rejects.toThrow("该对话属于定时任务，请先删除定时任务");
+  });
 });
 
 describe("routine requests", () => {

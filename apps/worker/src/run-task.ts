@@ -10,12 +10,18 @@ import type { TaskNotifier } from "./queue.js";
 import { runChatTask } from "./run-chat-task.js";
 import { isBrowserDemoMessage, runBrowserTask } from "./run-browser-task.js";
 import { isFileDemoMessage, runFileTask } from "./run-file-task.js";
+import { runOpenAIAgentTask, type AgentsRuntimeLike } from "./run-openai-agent-task.js";
+import { runSdkAgentTask } from "./run-sdk-agent-task.js";
+import type { SdkRuntimeLike } from "./agents-sdk-runtime.js";
 
 export type TaskWorkerDependencies = {
   repos: Repositories;
   model: ModelProvider;
   notifier: TaskNotifier;
   computer?: AgentComputerClientLike;
+  agentRuntimeMode?: "agents-sdk" | "openai-agents" | "legacy";
+  agentRuntime?: AgentsRuntimeLike;
+  sdkRuntimeFactory?: (userId: string) => Promise<SdkRuntimeLike | undefined>;
 };
 
 const uncertainSimulatedTasks = new Set<string>();
@@ -51,6 +57,24 @@ export async function runTask(
   const userMessage = messages.find((message) => message.id === task.messageId && message.authorType === "user");
   if (!userMessage) {
     await runChatTask(job, deps);
+    return;
+  }
+
+  if (deps.agentRuntimeMode === "agents-sdk" && deps.sdkRuntimeFactory) {
+    const runtime = await deps.sdkRuntimeFactory(task.userId);
+    if (runtime) {
+      await runSdkAgentTask(job, { repos: deps.repos, runtime, notifier: deps.notifier, computer: deps.computer, resumeRunning: queueJob?.id?.endsWith(":resume") });
+      return;
+    }
+  }
+
+  if (deps.agentRuntimeMode === "openai-agents" && deps.agentRuntime) {
+    await runOpenAIAgentTask(job, {
+      repos: deps.repos,
+      runtime: deps.agentRuntime,
+      notifier: deps.notifier,
+      computer: deps.computer
+    });
     return;
   }
 

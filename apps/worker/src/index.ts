@@ -9,13 +9,28 @@ import { startWorkerHeartbeat } from "./heartbeat.js";
 import { createTaskWorker, RedisTaskNotifier, TASK_JOB_NAME, TASK_QUEUE_NAME } from "./queue.js";
 import { recoverTasksOnStartup } from "./task-recovery.js";
 import { scanDueRoutines, startRoutineScheduler } from "./routine-scheduler.js";
+import { OpenAIAgentsRuntime } from "./openai-agents-runtime.js";
+import { createSdkRuntimeFromConfig } from "./create-sdk-runtime.js";
+
+const optionalNonEmptyString = z.preprocess(
+  (value) => typeof value === "string" && value.trim() === "" ? undefined : value,
+  z.string().min(1).optional()
+);
+const optionalUrl = z.preprocess(
+  (value) => typeof value === "string" && value.trim() === "" ? undefined : value,
+  z.string().url().optional()
+);
 
 const WorkerConfigSchema = z.object({
   databaseUrl: z.string().url().optional(),
   redisUrl: z.string().url().default("redis://127.0.0.1:6379"),
   computerUrl: z.string().url().optional(),
   computerToken: z.string().min(1).optional(),
-  routineScanIntervalMs: z.coerce.number().int().min(100).default(5_000)
+  routineScanIntervalMs: z.coerce.number().int().min(100).default(5_000),
+  agentRuntime: z.enum(["agents-sdk", "openai-agents", "legacy"]).default("agents-sdk"),
+  openAIApiKey: optionalNonEmptyString,
+  openAIBaseUrl: optionalUrl,
+  openAIAgentModel: z.string().min(1).default("gpt-6-astra")
 });
 
 export async function start(): Promise<void> {
@@ -24,7 +39,11 @@ export async function start(): Promise<void> {
     redisUrl: process.env.REDIS_URL,
     computerUrl: process.env.VORK_COMPUTER_URL,
     computerToken: process.env.VORK_COMPUTER_TOKEN,
-    routineScanIntervalMs: process.env.VORK_ROUTINE_SCAN_INTERVAL_MS
+    routineScanIntervalMs: process.env.VORK_ROUTINE_SCAN_INTERVAL_MS,
+    agentRuntime: process.env.VORK_AGENT_RUNTIME,
+    openAIApiKey: process.env.OPENAI_API_KEY,
+    openAIBaseUrl: process.env.OPENAI_BASE_URL,
+    openAIAgentModel: process.env.OPENAI_AGENT_MODEL
   });
   const repos = createRepositories({ databaseUrl: config.databaseUrl });
   const workerRedis = new Redis(config.redisUrl, { maxRetriesPerRequest: null });
@@ -44,6 +63,16 @@ export async function start(): Promise<void> {
     if (storedCredential.model) process.env.LLM_MODEL = storedCredential.model;
   }
   const model = createModelFromEnv();
+  const agentsApiKey = config.openAIApiKey;
+  const agentsBaseUrl = config.openAIBaseUrl;
+  const agentsModel = config.openAIAgentModel;
+  const agentRuntime = config.agentRuntime === "openai-agents" && agentsApiKey
+    ? new OpenAIAgentsRuntime({
+        apiKey: agentsApiKey,
+        baseURL: agentsBaseUrl,
+        model: agentsModel
+      })
+    : undefined;
   const recoveryQueue = new Queue<TaskJob>(TASK_QUEUE_NAME, { connection: workerRedis });
   await recoverTasksOnStartup(
     {
@@ -62,7 +91,10 @@ export async function start(): Promise<void> {
       repos,
       model,
       notifier: new RedisTaskNotifier(publisherRedis),
-      computer
+      computer,
+      agentRuntimeMode: config.agentRuntime,
+      agentRuntime,
+      sdkRuntimeFactory: async (userId) => createSdkRuntimeFromConfig(process.env, await repos.getModelCredential(userId))
     },
     workerRedis
   );

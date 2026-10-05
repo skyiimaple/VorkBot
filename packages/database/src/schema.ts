@@ -19,14 +19,18 @@ export const users = pgTable("users", {
   updatedAt: timestampWithTimeZone("updated_at").notNull()
 });
 
-export const bots = pgTable("bots", {
-  id: text("id").primaryKey(),
-  userId: text("user_id").notNull().references(() => users.id),
-  name: text("name").notNull(),
-  persona: text("persona").notNull(),
-  createdAt: timestampWithTimeZone("created_at").notNull(),
-  updatedAt: timestampWithTimeZone("updated_at").notNull()
-});
+export const bots = pgTable(
+  "bots",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id").notNull().references(() => users.id),
+    name: text("name").notNull(),
+    persona: text("persona").notNull(),
+    createdAt: timestampWithTimeZone("created_at").notNull(),
+    updatedAt: timestampWithTimeZone("updated_at").notNull()
+  },
+  (table) => [uniqueIndex("bots_user_name_lower_unique").on(table.userId, sql`lower(${table.name})`)]
+);
 
 export const conversations = pgTable("conversations", {
   id: text("id").primaryKey(),
@@ -35,6 +39,25 @@ export const conversations = pgTable("conversations", {
   createdAt: timestampWithTimeZone("created_at").notNull(),
   updatedAt: timestampWithTimeZone("updated_at").notNull()
 });
+
+export const agentSessions = pgTable(
+  "agent_sessions",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id").notNull().references(() => users.id),
+    botId: text("bot_id").notNull().references(() => bots.id, { onDelete: "cascade" }),
+    conversationId: text("conversation_id").notNull().references(() => conversations.id, { onDelete: "cascade" }),
+    runtime: text("runtime").notNull(),
+    externalSessionId: text("external_session_id").notNull(),
+    createdAt: timestampWithTimeZone("created_at").notNull(),
+    updatedAt: timestampWithTimeZone("updated_at").notNull()
+  },
+  (table) => [
+    uniqueIndex("agent_sessions_user_conversation_runtime_unique").on(table.userId, table.conversationId, table.runtime),
+    uniqueIndex("agent_sessions_external_runtime_unique").on(table.runtime, table.externalSessionId),
+    check("agent_sessions_runtime_check", sql`${table.runtime} IN ('openai-agents')`)
+  ]
+);
 
 export const conversationMembers = pgTable(
   "conversation_members",
@@ -96,6 +119,14 @@ export const taskCheckpoints = pgTable(
   (table) => [uniqueIndex("task_checkpoints_task_id_version_key").on(table.taskId, table.version)]
 );
 
+export const sdkAgentRuns = pgTable("sdk_agent_runs", {
+  taskId: text("task_id").primaryKey().references(() => tasks.id, { onDelete: "cascade" }),
+  userId: text("user_id").notNull().references(() => users.id),
+  stateText: text("state_text").notNull(),
+  historyJson: jsonb("history_json"),
+  updatedAt: timestampWithTimeZone("updated_at").notNull().defaultNow()
+});
+
 export const toolCalls = pgTable(
   "tool_calls",
   {
@@ -114,6 +145,12 @@ export const toolCalls = pgTable(
   },
   (table) => [uniqueIndex("tool_calls_task_turn_attempt_key").on(table.taskId, table.turn, table.attempt)]
 );
+
+export const sdkToolLinks = pgTable("sdk_tool_links", {
+  taskId: text("task_id").notNull().references(() => tasks.id, { onDelete: "cascade" }),
+  callId: text("call_id").notNull(),
+  toolCallId: text("tool_call_id").notNull().references(() => toolCalls.id, { onDelete: "cascade" })
+}, (table) => [primaryKey({ columns: [table.taskId, table.callId] })]);
 
 export const taskEvents = pgTable(
   "task_events",

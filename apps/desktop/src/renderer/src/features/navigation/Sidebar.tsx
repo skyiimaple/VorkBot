@@ -197,8 +197,8 @@ export function Sidebar({
       if (selectedConversationId === row.conversation.id) {
         await navigate({ to: "/" });
       }
-    } catch {
-      window.alert("删除失败，请稍后重试");
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : "删除失败，请稍后重试");
     }
   }
 

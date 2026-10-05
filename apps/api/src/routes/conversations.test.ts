@@ -198,4 +198,29 @@ describe("conversation routes", () => {
     expect(response.statusCode).toBe(404);
     expect(response.json()).toEqual({ error: "Conversation not found" });
   });
+
+  it("returns a conflict when deleting a Routine's dedicated conversation", async () => {
+    const botResponse = await app.inject({
+      method: "POST",
+      url: "/v1/bots",
+      payload: { name: "Routine Bot", persona: "定时执行" }
+    });
+    const routineResponse = await app.inject({
+      method: "POST",
+      url: "/v1/routines",
+      payload: {
+        name: "晨报",
+        botId: botResponse.json().bot.id,
+        prompt: "生成晨报",
+        trigger: { type: "cron", expression: "0 9 * * *" },
+        timezone: "Asia/Shanghai"
+      }
+    });
+    const conversationId = routineResponse.json().conversationId as string;
+
+    const response = await app.inject({ method: "DELETE", url: `/v1/conversations/${conversationId}` });
+
+    expect(response.statusCode).toBe(409);
+    expect(response.json()).toEqual({ error: "该对话属于定时任务，请先删除定时任务" });
+  });
 });

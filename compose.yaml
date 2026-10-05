@@ -91,6 +91,10 @@ services:
       VORK_MODEL_PROVIDER: ${VORK_MODEL_PROVIDER:-}
       LLM_TIMEOUT_MS: ${LLM_TIMEOUT_MS:-}
       VORK_ROUTINE_SCAN_INTERVAL_MS: ${VORK_ROUTINE_SCAN_INTERVAL_MS:-5000}
+      VORK_AGENT_RUNTIME: ${VORK_AGENT_RUNTIME:-agents-sdk}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_AGENT_MODEL: ${OPENAI_AGENT_MODEL:-gpt-6-astra}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
     depends_on:
       computer:
         condition: service_started

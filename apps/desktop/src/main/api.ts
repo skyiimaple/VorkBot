@@ -65,7 +65,11 @@ async function requestApi(apiBaseUrl: string, request: ApiRequest, fetchImplemen
     headers: { accept: "application/json", ...(body ? { "content-type": "application/json" } : {}) },
     ...(body ? { body: JSON.stringify(body) } : {})
   });
-  if (!response.ok) throw new Error(`Vork API request failed with ${response.status}`);
+  if (!response.ok) {
+    const payload = (await response.json().catch(() => null)) as { error?: unknown } | null;
+    const message = typeof payload?.error === "string" ? payload.error : `Vork API request failed with ${response.status}`;
+    throw new Error(message);
+  }
   return ApiResponseSchema.parse({ operation: request.operation, data: await response.json() });
 }
 

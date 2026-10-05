@@ -1,5 +1,6 @@
 import { ConversationSchema, MessageSchema, TaskPublicationFailureResponseSchema, TaskSchema } from "@vork/contracts";
 import type { FastifyInstance } from "fastify";
+import { RoutineConversationDeleteError } from "@vork/database";
 import { z } from "zod";
 import type { ApiDependencies } from "../app.js";
 import { ChatService } from "../services/chat-service.js";
@@ -66,10 +67,18 @@ export function registerConversationRoutes(app: FastifyInstance, dependencies: A
 
   app.delete("/v1/conversations/:id", async (request, reply) => {
     const { id } = ConversationParamsSchema.parse(request.params);
-    const deleted = await dependencies.repositories.deleteConversation({
-      userId: request.userId,
-      conversationId: id
-    });
+    let deleted: boolean;
+    try {
+      deleted = await dependencies.repositories.deleteConversation({
+        userId: request.userId,
+        conversationId: id
+      });
+    } catch (error) {
+      if (error instanceof RoutineConversationDeleteError) {
+        return reply.code(409).send(ErrorResponseSchema.parse({ error: "该对话属于定时任务，请先删除定时任务" }));
+      }
+      throw error;
+    }
     if (!deleted) {
       return reply.code(404).send(ErrorResponseSchema.parse({ error: "Conversation not found" }));
     }

@@ -65,13 +65,66 @@ describe("runTask routing", () => {
       terminateTerminal: vi.fn()
     };
 
-    await runTask(job, { repos, model: new FakeModel(["普通", "回复"]), notifier, computer });
+    await runTask(job, { repos, model: new FakeModel(["普通", "回复"]), notifier, computer, agentRuntimeMode: "legacy" });
 
     expect(computer.acquire).not.toHaveBeenCalled();
     expect((await repos.getTask(job.taskId))?.status).toBe("completed");
     expect(await repos.listMessages({ userId: job.userId, conversationId: job.conversationId })).toMatchObject([
       { authorType: "user", content: "普通聊天，不要跑 demo" },
       { authorType: "assistant", content: "普通回复" }
+    ]);
+  });
+
+  it("routes every ordinary message through Agents API when configured", async () => {
+    const job = await createJob("查一下今天的新闻");
+    const agentRuntime = {
+      runTurn: vi.fn(async ({ onDelta }: { onDelta: (delta: string) => void | Promise<void> }) => {
+        await onDelta("联网结果");
+        return { sessionId: "sess_route", reply: "联网结果" };
+      })
+    };
+
+    await runTask(job, {
+      repos,
+      model: new FakeModel(["不应调用"]),
+      notifier,
+      agentRuntimeMode: "openai-agents",
+      agentRuntime
+    });
+
+    expect(agentRuntime.runTurn).toHaveBeenCalledOnce();
+    expect(await repos.listMessages({ userId: job.userId, conversationId: job.conversationId })).toMatchObject([
+      { authorType: "user", content: "查一下今天的新闻" },
+      { authorType: "assistant", content: "联网结果" }
+    ]);
+  });
+
+  it("routes natural language through the user's SDK runtime", async () => {
+    const job = await createJob("正常聊天也使用 DeepSeek");
+    const runtime = {
+      runTurn: vi.fn(async () => ({ state: "{}", history: [], reply: "DeepSeek回答" }))
+    };
+    const sdkRuntimeFactory = vi.fn(async () => runtime);
+    await runTask(job, { repos, model: new FakeModel(["不应调用"]), notifier, agentRuntimeMode: "agents-sdk", sdkRuntimeFactory });
+    expect(sdkRuntimeFactory).toHaveBeenCalledWith(job.userId);
+    expect((await repos.getTask(job.taskId))?.status).toBe("completed");
+    expect((await repos.listMessages({ userId: job.userId, conversationId: job.conversationId })).at(-1)?.content).toBe("DeepSeek回答");
+  });
+
+  it("falls back to the basic chat model when Agents API is not configured", async () => {
+    const job = await createJob("你好");
+
+    await runTask(job, {
+      repos,
+      model: new FakeModel(["基础问答仍然可用"]),
+      notifier,
+      agentRuntimeMode: "openai-agents"
+    });
+
+    expect((await repos.getTask(job.taskId))?.status).toBe("completed");
+    expect(await repos.listMessages({ userId: job.userId, conversationId: job.conversationId })).toMatchObject([
+      { authorType: "user", content: "你好" },
+      { authorType: "assistant", content: "基础问答仍然可用" }
     ]);
   });
 

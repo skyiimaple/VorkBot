@@ -45,4 +45,21 @@ describe("Bot routes", () => {
     expect(response.statusCode).toBe(200);
     expect(response.json().bots).toContainEqual(expect.objectContaining({ name: "第一个 Bot", userId: "user_local" }));
   });
+
+  it("rejects duplicate Bot names for the same user ignoring case", async () => {
+    const first = await app.inject({
+      method: "POST",
+      url: "/v1/bots",
+      payload: { name: "Research", persona: "第一个" }
+    });
+    const duplicate = await app.inject({
+      method: "POST",
+      url: "/v1/bots",
+      payload: { name: "research", persona: "第二个" }
+    });
+
+    expect(first.statusCode).toBe(201);
+    expect(duplicate.statusCode).toBe(409);
+    expect(duplicate.json()).toEqual({ error: "Bot 名称已存在" });
+  });
 });

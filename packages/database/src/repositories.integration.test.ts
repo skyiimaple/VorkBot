@@ -37,6 +37,50 @@ describe("repositories", () => {
     expect((await repos.listTaskEvents(task.id, 1)).map((event) => event.sequence)).toEqual([2]);
   });
 
+  it("persists one OpenAI Agents session mapping per conversation", async () => {
+    const bot = await repos.createBot({ userId: "user_local", name: "Agents Bot", persona: "测试 session" });
+    const conversation = await repos.createConversation({ userId: "user_local", botId: bot.id });
+
+    expect(await repos.getAgentSession({
+      userId: "user_local",
+      conversationId: conversation.id,
+      runtime: "openai-agents"
+    })).toBeNull();
+
+    const first = await repos.upsertAgentSession({
+      userId: "user_local",
+      botId: bot.id,
+      conversationId: conversation.id,
+      runtime: "openai-agents",
+      externalSessionId: "sess_first"
+    });
+    const updated = await repos.upsertAgentSession({
+      userId: "user_local",
+      botId: bot.id,
+      conversationId: conversation.id,
+      runtime: "openai-agents",
+      externalSessionId: "sess_recovered"
+    });
+
+    expect(updated.id).toBe(first.id);
+    await expect(repos.getAgentSession({
+      userId: "user_local",
+      conversationId: conversation.id,
+      runtime: "openai-agents"
+    })).resolves.toMatchObject({ externalSessionId: "sess_recovered", botId: bot.id });
+
+    await expect(repos.deleteAgentSession({
+      userId: "user_local",
+      conversationId: conversation.id,
+      runtime: "openai-agents"
+    })).resolves.toBe(true);
+    await expect(repos.getAgentSession({
+      userId: "user_local",
+      conversationId: conversation.id,
+      runtime: "openai-agents"
+    })).resolves.toBeNull();
+  });
+
   it("rejects invalid Bot repository inputs before writing or querying", async () => {
     await expect(
       repos.createBot({ userId: "   ", name: "不应创建", persona: "验证 userId" })

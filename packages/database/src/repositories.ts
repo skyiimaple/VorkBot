@@ -27,6 +27,7 @@ import type {
 import { createDatabaseClient, type DatabaseClientOptions } from "./client.js";
 import { createTaskRecoveryRepository } from "./task-recovery-repository.js";
 import { createRoutineRepository } from "./routine-repository.js";
+import { createSdkAgentRepository } from "./sdk-agent-repository.js";
 
 type DateValue = Date | string;
 
@@ -81,6 +82,28 @@ type TaskEventRow = {
   created_at: DateValue;
 };
 
+type AgentSessionRow = {
+  id: string;
+  user_id: string;
+  bot_id: string;
+  conversation_id: string;
+  runtime: "openai-agents";
+  external_session_id: string;
+  created_at: DateValue;
+  updated_at: DateValue;
+};
+
+export type AgentSession = {
+  id: string;
+  userId: string;
+  botId: string;
+  conversationId: string;
+  runtime: "openai-agents";
+  externalSessionId: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type CreateBotRepositoryInput = ContractCreateBotRepositoryInput;
 
 export type CreateConversationRepositoryInput = ContractCreateConversationRepositoryInput;
@@ -115,6 +138,20 @@ export type TaskWithMessagePreview = {
   task: Task;
   messageContent: string;
 };
+
+export class BotNameConflictError extends Error {
+  constructor() {
+    super("BOT_NAME_CONFLICT");
+    this.name = "BotNameConflictError";
+  }
+}
+
+export class RoutineConversationDeleteError extends Error {
+  constructor() {
+    super("ROUTINE_CONVERSATION_DELETE_FORBIDDEN");
+    this.name = "RoutineConversationDeleteError";
+  }
+}
 
 export type Repositories = ReturnType<typeof createRepositories>;
 
@@ -188,6 +225,19 @@ function toTaskEvent(row: TaskEventRow): TaskEvent {
   };
 }
 
+function toAgentSession(row: AgentSessionRow): AgentSession {
+  return {
+    id: row.id,
+    userId: row.user_id,
+    botId: row.bot_id,
+    conversationId: row.conversation_id,
+    runtime: row.runtime,
+    externalSessionId: row.external_session_id,
+    createdAt: iso(row.created_at),
+    updatedAt: iso(row.updated_at)
+  };
+}
+
 function required<Row>(rows: Row[], message: string): Row {
   const row = rows[0];
   if (!row) throw new Error(message);
@@ -203,7 +253,58 @@ export function createRepositories(options: DatabaseClientOptions = {}) {
   return {
     ...recovery,
     ...routines,
+    ...createSdkAgentRepository(sql),
     close: client.close,
+    async getAgentSession(input: {
+      userId: string;
+      conversationId: string;
+      runtime: "openai-agents";
+    }): Promise<AgentSession | null> {
+      const rows = await sql<AgentSessionRow[]>`
+        SELECT id, user_id, bot_id, conversation_id, runtime, external_session_id, created_at, updated_at
+        FROM agent_sessions
+        WHERE user_id = ${input.userId}
+          AND conversation_id = ${input.conversationId}
+          AND runtime = ${input.runtime}
+        LIMIT 1
+      `;
+      return rows[0] ? toAgentSession(rows[0]) : null;
+    },
+    async upsertAgentSession(input: {
+      userId: string;
+      botId: string;
+      conversationId: string;
+      runtime: "openai-agents";
+      externalSessionId: string;
+    }): Promise<AgentSession> {
+      const now = new Date().toISOString();
+      const rows = await sql<AgentSessionRow[]>`
+        INSERT INTO agent_sessions (
+          id, user_id, bot_id, conversation_id, runtime, external_session_id, created_at, updated_at
+        ) VALUES (
+          ${id("agent_session")}, ${input.userId}, ${input.botId}, ${input.conversationId},
+          ${input.runtime}, ${input.externalSessionId}, ${now}, ${now}
+        )
+        ON CONFLICT (user_id, conversation_id, runtime) DO UPDATE
+        SET external_session_id = EXCLUDED.external_session_id, updated_at = EXCLUDED.updated_at
+        RETURNING id, user_id, bot_id, conversation_id, runtime, external_session_id, created_at, updated_at
+      `;
+      return toAgentSession(required(rows, "Agent session could not be persisted"));
+    },
+    async deleteAgentSession(input: {
+      userId: string;
+      conversationId: string;
+      runtime: "openai-agents";
+    }): Promise<boolean> {
+      const rows = await sql<{ id: string }[]>`
+        DELETE FROM agent_sessions
+        WHERE user_id = ${input.userId}
+          AND conversation_id = ${input.conversationId}
+          AND runtime = ${input.runtime}
+        RETURNING id
+      `;
+      return rows.length > 0;
+    },
 
     async createBot(rawInput: CreateBotRepositoryInput): Promise<Bot> {
       const input = CreateBotRepositoryInputSchema.parse(rawInput);
@@ -213,11 +314,26 @@ export function createRepositories(options: DatabaseClientOptions = {}) {
         VALUES (${input.userId}, ${now}, ${now})
         ON CONFLICT (id) DO UPDATE SET updated_at = EXCLUDED.updated_at
       `;
-      const rows = await sql<BotRow[]>`
-        INSERT INTO bots (id, user_id, name, persona, created_at, updated_at)
-        VALUES (${id("bot")}, ${input.userId}, ${input.name}, ${input.persona}, ${now}, ${now})
-        RETURNING id, user_id, name, persona, created_at, updated_at
-      `;
+      let rows: BotRow[];
+      try {
+        rows = await sql<BotRow[]>`
+          INSERT INTO bots (id, user_id, name, persona, created_at, updated_at)
+          VALUES (${id("bot")}, ${input.userId}, ${input.name}, ${input.persona}, ${now}, ${now})
+          RETURNING id, user_id, name, persona, created_at, updated_at
+        `;
+      } catch (error) {
+        if (
+          typeof error === "object" &&
+          error !== null &&
+          "code" in error &&
+          error.code === "23505" &&
+          "constraint_name" in error &&
+          error.constraint_name === "bots_user_name_lower_unique"
+        ) {
+          throw new BotNameConflictError();
+        }
+        throw error;
+      }
       return BotSchema.parse(toBot(required(rows, "Bot could not be created")));
     },
 
@@ -295,6 +411,13 @@ export function createRepositories(options: DatabaseClientOptions = {}) {
           FOR UPDATE
         `;
         if (!owned[0]) return false;
+
+        const routine = await transaction<{ id: string }[]>`
+          SELECT id FROM routines
+          WHERE conversation_id = ${input.conversationId}
+          LIMIT 1
+        `;
+        if (routine[0]) throw new RoutineConversationDeleteError();
 
         // Phase3 表可能尚未迁移到本地库；有则清理，无则跳过。
         const phase3 = await transaction<{ memories: boolean; skill_proposals: boolean }[]>`
@@ -789,7 +912,12 @@ export function createRepositories(options: DatabaseClientOptions = {}) {
         return { task: completed };
       }
 
-      if (action?.type === "file.write" || action?.type === "file.read") {
+      const resumableComputerActions = new Set([
+        "file.write", "file.read", "file.list", "file.stat", "file.mkdir", "file.move", "file.delete",
+        "browser.navigate", "browser.observe", "browser.click", "browser.type", "browser.scroll",
+        "terminal.start", "terminal.write", "terminal.read", "terminal.terminate"
+      ]);
+      if (action?.type && resumableComputerActions.has(action.type)) {
         const queuedSequence = sequence + 1;
         const updatedRows = await sql<TaskRow[]>`
           UPDATE tasks

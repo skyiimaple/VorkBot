@@ -1,6 +1,6 @@
 # Vork 本地开发版
 
-这是单用户的本地开发版：可通过 Electron 创建 Bot、聊天；默认使用确定性 FakeModel，配置 `LLM_API_KEY` 后可接入 OpenAI-compatible 模型。云电脑由 Compose 内独立 `computer` 服务提供文件、浏览器和终端工具、JPEG 画面面板及人工接管状态机。不要将此 Compose 配置直接暴露到公网。
+这是单用户的本地开发版：可通过 Electron 创建 Bot、聊天；默认使用 OpenAI Agents SDK 编排 Agent，调用 DeepSeek 模型。会话与执行状态保存在本地 PostgreSQL，不需要 OpenAI API Key。云电脑由 Compose 内独立 `computer` 服务提供文件、浏览器和终端工具、JPEG 画面面板及人工接管状态机。不要将此 Compose 配置直接暴露到公网。
 
 ## 环境与启动
 
@@ -17,18 +17,31 @@ pnpm dev
 
 ### 云电脑与 Agent
 
+默认 Runtime 为 `agents-sdk`。在 `.env` 或桌面“模型凭据”中配置 DeepSeek；桌面保存的凭据优先，并在下一次任务生效：
+
+```sh
+LLM_API_KEY=你的DeepSeek密钥
+LLM_BASE_URL=https://api.deepseek.com
+LLM_MODEL=deepseek-v4-flash
+```
+
+SDK 通过 Function Tools 调用 Vork Computer 的文件、终端和浏览器能力。纯问答不会占用 Computer 槽位；第一次调用 Computer 工具时才申请，同一轮后续工具复用该槽位，结束后自动释放。DeepSeek 当前关闭 thinking 模式以兼容 SDK 的工具调用历史，关闭 OpenAI tracing，不向 OpenAI 上传运行追踪。
+
+SDK 路径不提供 OpenAI 托管的 `web_search`：联网依靠云端浏览器，页面可读内容及网站限制会影响效果，不保证任意网站均可搜索或读取。每轮最多 30 个模型回合、最长 5 分钟。
+
 - `[file-demo]`：写入并读取演示文件。
 - `[browser-demo]`：在自建测试页执行 observe/click/type。
 - 对话标题栏“电脑”：按需展开 JPEG 画面；默认折叠，折叠后停止轮询。
-- `[agent-file]` / `[agent-llm]`：执行受策略、预算、审批和恢复机制约束的 Agent 循环。
-- 敏感写入和敏感记忆进入 `waiting_approval`，不会绕过用户批准。
+- Agents 可直接选择读取或写入文件、运行终端命令，以及导航、观察、点击、输入和滚动浏览器，无需用户输入内部测试标记。
+- 文件删除/移动、敏感写入及联网安装类终端命令进入 `waiting_approval`；批准后恢复 SDK 状态，沿用原始工具调用 ID 继续任务。已成功工具的结果持久化，恢复时复用；结果不确定的副作用不会自动重做。
+- 方括号形式的 demo 标记只为旧 Runtime 和自动化测试保留，不是正常产品操作方式。
 
-远程模型可在 `.env` 或桌面“模型凭据”中配置：
+需要使用旧 Runtime 时可设置 `VORK_AGENT_RUNTIME=legacy`。若要显式切回 OpenAI 托管 Agents API，则另行配置有权限和余额的 OpenAI 项目密钥：
 
 ```sh
-LLM_API_KEY=sk-...
-LLM_BASE_URL=https://api.deepseek.com
-LLM_MODEL=deepseek-v4-flash
+VORK_AGENT_RUNTIME=openai-agents
+OPENAI_API_KEY=你的OpenAI密钥
+OPENAI_AGENT_MODEL=gpt-6-astra
 ```
 
 ### 定时任务（Routines）

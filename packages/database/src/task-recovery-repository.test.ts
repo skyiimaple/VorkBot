@@ -9,8 +9,10 @@ describe("task recovery repository", () => {
   beforeEach(async () => resetFoundationDatabase(databaseUrl));
   afterAll(async () => repos.close());
 
+  let botSequence = 0;
+
   async function createTask(userId = "user_local") {
-    const bot = await repos.createBot({ userId, name: "Recovery Bot", persona: "safe" });
+    const bot = await repos.createBot({ userId, name: `Recovery Bot ${++botSequence}`, persona: "safe" });
     const conversation = await repos.createConversation({ userId, botId: bot.id });
     return repos.createQueuedMessageTask({ userId, botId: bot.id, conversationId: conversation.id, content: "run" });
   }

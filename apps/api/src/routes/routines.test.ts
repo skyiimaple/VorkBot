@@ -28,8 +28,10 @@ describe("routine routes", () => {
     await repositories.close();
   });
 
+  let botSequence = 0;
+
   async function createBot() {
-    return repositories.createBot({ userId: "user_local", name: "Routine Bot", persona: "scheduled" });
+    return repositories.createBot({ userId: "user_local", name: `Routine Bot ${++botSequence}`, persona: "scheduled" });
   }
 
   async function createRoutine() {

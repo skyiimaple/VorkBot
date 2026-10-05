@@ -1,9 +1,28 @@
-import type { AgentToolAction } from "@vork/contracts";
+import type { AgentToolAction, ToolCall } from "@vork/contracts";
 import { describe, expect, it, vi } from "vitest";
 import type { AgentComputerClientLike } from "./computer-client.js";
 import { createToolExecutionState, executeToolAction } from "./tool-executor.js";
 
 describe("executeToolAction", () => {
+  const savedCall: ToolCall = {
+    id: "tool_saved", taskId: "task_1", userId: "user_local", turn: 1, attempt: 0,
+    action: { type: "file.write", path: "notes.txt", content: "hello" }, risk: "side_effect", status: "succeeded",
+    observation: "wrote notes.txt (5 bytes)", errorCode: null, createdAt: new Date(0).toISOString(), updatedAt: new Date(0).toISOString()
+  };
+
+  it("replays a saved result without repeating a successful side effect", async () => {
+    const { deps, computer } = createDependencies();
+    const observation = await executeToolAction(savedCall.action as AgentToolAction, { ...deps, userId: "user_local", existingToolCall: savedCall });
+    expect(observation).toBe("wrote notes.txt (5 bytes)");
+    expect(computer.writeFile).not.toHaveBeenCalled();
+  });
+
+  it("does not repeat a side effect whose previous execution outcome is unknown", async () => {
+    const { deps, computer } = createDependencies();
+    await expect(executeToolAction(savedCall.action as AgentToolAction, { ...deps, userId: "user_local", existingToolCall: { ...savedCall, status: "executing", observation: null } })).rejects.toMatchObject({ toolCallId: "tool_saved" });
+    expect(computer.writeFile).not.toHaveBeenCalled();
+  });
+
   it.each([
     [{ type: "browser.navigate", url: "https://example.com" }, "navigate", ["lease_1", "https://example.com"]],
     [{ type: "file.mkdir", path: "src" }, "makeDirectory", ["lease_1", "src"]],
@@ -54,9 +73,10 @@ function createDependencies() {
     taskId: "task_1",
     leaseId: "lease_1",
     computer,
-    repos: { appendTaskEvent: vi.fn(async () => ({ sequence: 1 })) },
+    repos: { appendTaskEvent: vi.fn(async () => ({ sequence: 1 })), finishToolCallAndCheckpoint: vi.fn(async () => ({})) },
     notifier: { notify: vi.fn(async () => undefined) },
-    state: createToolExecutionState()
+    state: createToolExecutionState(),
+    checkpoint: () => ({ nextTurn: 2, lastObservation: "", reply: "", modelTurns: 1, toolCalls: 1, lastCompletedToolCallId: "tool_saved" })
   } as unknown as Parameters<typeof executeToolAction>[1];
   return { deps, computer };
 }
