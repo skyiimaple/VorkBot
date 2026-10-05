@@ -2,7 +2,7 @@
 
 > **已过时（阶段 1 快照）。** 本地起栈、端口、健康检查与冒烟请改读 [`2026-09-20-vork-local-stack-zh-CN.md`](./2026-09-20-vork-local-stack-zh-CN.md)。阶段 2 云电脑已合入 `main`。
 
-交接日期：2026-09-16。仓库：`/Users/maple/code/repo/VorkBot`，当前在 `main`。用户明确允许在 `main` 工作，但要求节省 token：完成一个阶段后再征得同意复核，不要逐任务反复审查。
+交接日期：2026-09-16。仓库：`/Users/maple/code/repo/vork-bot`，当前在 `main`。用户明确允许在 `main` 工作，但要求节省 token：完成一个阶段后再征得同意复核，不要逐任务反复审查。
 
 ## 当前进度
 

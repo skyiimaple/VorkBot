@@ -2,7 +2,7 @@
 
 **日期：** 2026-09-14  
 **状态：** 已批准，可进入实施计划阶段  
-**仓库：** `/Users/maple/code/repo/VorkBot`
+**仓库：** `/Users/maple/code/repo/vork-bot`
 
 ## 1. 产品定义
 

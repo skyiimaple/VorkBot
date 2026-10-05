@@ -1,6 +1,6 @@
 # Vork 本地栈交接（健康检查 / 冒烟）
 
-交接日期：2026-09-20。仓库：`/Users/maple/code/repo/VorkBot`。  
+交接日期：2026-09-20。仓库：`/Users/maple/code/repo/vork-bot`。
 旧交接 `docs/handovers/2026-09-16-vork-phase1-cursor-zh-CN.md` 仅覆盖阶段 1，且当时 Compose/E2E 仍属未提交状态；**以本文 + `README.zh-CN.md` 为准**。阶段 2（云电脑）相关提交已在 `main`（至 `d77845f`）。
 
 ## 服务清单与端口

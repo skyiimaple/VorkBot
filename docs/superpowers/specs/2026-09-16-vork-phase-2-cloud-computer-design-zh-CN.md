@@ -2,7 +2,7 @@
 
 **日期：** 2026-09-16  
 **状态：** 歧义已收敛，待用户审阅  
-**仓库：** `/Users/maple/code/repo/VorkBot`  
+**仓库：** `/Users/maple/code/repo/vork-bot`
 **依据：** `docs/superpowers/specs/2026-09-14-vork-system-design-zh-CN.md`、`docs/superpowers/plans/2026-09-14-vork-implementation-roadmap-zh-CN.md`  
 **前序：** 阶段 1 已交付 FakeModel 对话垂直切片（提交含 `273065a`）
 

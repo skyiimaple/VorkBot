@@ -1,6 +1,6 @@
 # Vork 功能版 V1：任务安全与恢复设计
 
-日期：2026-09-29。仓库：`/Users/maple/code/repo/VorkBot`。本切片延续 `docs/superpowers/specs/2026-09-28-vork-functional-v1-design-zh-CN.md` 的第三阶段，不包含 Routines、完整 Skills 发布或生产部署。
+日期：2026-09-29。仓库：`/Users/maple/code/repo/vork-bot`。本切片延续 `docs/superpowers/specs/2026-09-28-vork-functional-v1-design-zh-CN.md` 的第三阶段，不包含 Routines、完整 Skills 发布或生产部署。
 
 ## 1. 目标
 

@@ -2,7 +2,7 @@
 
 **Date:** 2026-09-14  
 **Status:** Approved for implementation planning  
-**Repository:** `/Users/maple/code/repo/VorkBot`
+**Repository:** `/Users/maple/code/repo/vork-bot`
 
 ## 1. Product definition
 

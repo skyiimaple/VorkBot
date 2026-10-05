@@ -1,6 +1,6 @@
 # Vork 功能版 V1：完整工具执行状态
 
-交接日期：2026-09-29。仓库：`/Users/maple/code/repo/VorkBot`。分支：`main`。本轮未提交 Git。
+交接日期：2026-09-29。仓库：`/Users/maple/code/repo/vork-bot`。分支：`main`。本轮未提交 Git。
 
 ## 已实现
 

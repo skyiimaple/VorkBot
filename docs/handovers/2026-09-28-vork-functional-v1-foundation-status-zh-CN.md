@@ -1,6 +1,6 @@
 # Vork 功能版 V1：稳定基线状态
 
-交接日期：2026-09-28。仓库：`/Users/maple/code/repo/VorkBot`。分支：`main`。本轮按用户要求未提交 Git，未更新依赖，未重建或拉取 Docker 镜像。
+交接日期：2026-09-28。仓库：`/Users/maple/code/repo/vork-bot`。分支：`main`。本轮按用户要求未提交 Git，未更新依赖，未重建或拉取 Docker 镜像。
 
 ## 本轮结果
 

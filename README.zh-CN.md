@@ -1,4 +1,4 @@
-# Vork 本地开发版
+# vork-bot（Vork）本地开发版
 
 这是单用户的本地开发版：可通过 Electron 创建 Bot、聊天；默认使用 OpenAI Agents SDK 编排 Agent，调用 DeepSeek 模型。会话与执行状态保存在本地 PostgreSQL，不需要 OpenAI API Key。云电脑由 Compose 内独立 `computer` 服务提供文件、浏览器和终端工具、JPEG 画面面板及人工接管状态机。不要将此 Compose 配置直接暴露到公网。
 

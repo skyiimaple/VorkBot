@@ -193,7 +193,7 @@ async function dispatch(
 function truncateObservation(observation: string): string {
   return observation.length <= MAX_OBSERVATION_CHARS
     ? observation
-    : `${observation.slice(0, MAX_OBSERVATION_CHARS)}…`;
+    : `${observation.slice(0, MAX_OBSERVATION_CHARS - 1)}…`;
 }
 
 async function notify(notifier: TaskNotifier, taskId: string): Promise<void> {

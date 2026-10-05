@@ -1,9 +1,18 @@
-import type { AgentToolAction, ToolCall } from "@vork/contracts";
+import { CheckpointStateSchema, type AgentToolAction, type ToolCall } from "@vork/contracts";
 import { describe, expect, it, vi } from "vitest";
 import type { AgentComputerClientLike } from "./computer-client.js";
 import { createToolExecutionState, executeToolAction } from "./tool-executor.js";
 
 describe("executeToolAction", () => {
+  it("keeps a long browser observation including its ellipsis within the checkpoint limit", async () => {
+    const { deps, computer } = createDependencies();
+    computer.observe.mockResolvedValue({ pageId: "p", url: "https://example.com", title: "x".repeat(9000), loadState: "loaded", elements: [], consoleErrors: [] });
+    const observation = await executeToolAction({ type: "browser.observe" }, deps);
+    expect(observation.length).toBe(4000);
+    expect(observation.endsWith("…")).toBe(true);
+    expect(CheckpointStateSchema.safeParse({ ...deps.checkpoint!(observation, "tool_1"), lastObservation: observation }).success).toBe(true);
+  });
+
   const savedCall: ToolCall = {
     id: "tool_saved", taskId: "task_1", userId: "user_local", turn: 1, attempt: 0,
     action: { type: "file.write", path: "notes.txt", content: "hello" }, risk: "side_effect", status: "succeeded",
